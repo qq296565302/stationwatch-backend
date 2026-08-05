@@ -1,13 +1,26 @@
-// ============== 站点 ==============
+// ============== 区县（组织层级：市级 → 区县级 → 供电所） ==============
+export interface District {
+  id: number;
+  name: string;      // 如：张店 / 临淄 / 淄川 / 博山 / 周村 / 桓台 / 高青 / 沂源
+  code: string;      // 如：ZD / LZ / ZC / BS / ZCN / HT / GQ / YY
+  sortOrder: number; // 展示顺序
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ============== 站点（供电所，归属某个区县） ==============
 export interface Station {
   id: number;
   name: string;
   code: string;
+  districtId: number; // 所属区县
   region?: string;
   voltage?: string;
   feeders: number;
   transformers: number;
   maxDutyItemsPerRecord: number;
+  orderTimeLimit: number; // 工单时限（分钟），站点级，默认 45
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -19,8 +32,9 @@ export interface User {
   username: string;
   passwordHash: string;
   realName: string;
-  role: 'duty_officer' | 'supervisor' | 'admin';
+  role: 'duty_officer' | 'supervisor' | 'district_admin' | 'admin';
   stationId: number | null;
+  districtId: number | null; // 区县归属：district_admin 绑定区县；admin 为 null(市级)；其余随所属站点
   isActive: boolean;
   lastLoginAt: string | null;
   lastLoginIp: string | null;

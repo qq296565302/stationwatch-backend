@@ -22,16 +22,21 @@ export class CreateUserDto {
 
   @ApiProperty({
     example: 'duty_officer',
-    enum: ['duty_officer', 'supervisor', 'admin'],
+    enum: ['duty_officer', 'supervisor', 'district_admin', 'admin'],
     description: '角色',
   })
-  @IsIn(['duty_officer', 'supervisor', 'admin'])
-  role: 'duty_officer' | 'supervisor' | 'admin';
+  @IsIn(['duty_officer', 'supervisor', 'district_admin', 'admin'])
+  role: 'duty_officer' | 'supervisor' | 'district_admin' | 'admin';
 
   @ApiProperty({ example: 1, description: '所属站点 ID', required: false })
   @IsOptional()
   @IsInt()
   stationId?: number;
+
+  @ApiProperty({ example: 1, description: '所属区县 ID（创建区县管理员时必填）', required: false })
+  @IsOptional()
+  @IsInt()
+  districtId?: number;
 }
 
 export class UpdateUserDto {
@@ -41,16 +46,20 @@ export class UpdateUserDto {
 
   @ApiProperty({
     example: 'supervisor',
-    enum: ['duty_officer', 'supervisor', 'admin'],
+    enum: ['duty_officer', 'supervisor', 'district_admin', 'admin'],
     description: '角色',
     required: false,
   })
-  @IsOptional() @IsIn(['duty_officer', 'supervisor', 'admin'])
-  role?: 'duty_officer' | 'supervisor' | 'admin';
+  @IsOptional() @IsIn(['duty_officer', 'supervisor', 'district_admin', 'admin'])
+  role?: 'duty_officer' | 'supervisor' | 'district_admin' | 'admin';
 
   @ApiProperty({ example: 1, description: '所属站点 ID', required: false })
   @IsOptional() @IsInt()
   stationId?: number | null;
+
+  @ApiProperty({ example: 1, description: '所属区县 ID', required: false })
+  @IsOptional() @IsInt()
+  districtId?: number | null;
 
   @ApiProperty({ example: true, description: '是否启用', required: false })
   @IsOptional()
@@ -66,8 +75,8 @@ export class ResetPasswordDto {
 }
 
 export class ListUsersQuery {
-  @ApiProperty({ required: false, enum: ['duty_officer', 'supervisor', 'admin'] })
-  @IsOptional() @IsIn(['duty_officer', 'supervisor', 'admin'])
+  @ApiProperty({ required: false, enum: ['duty_officer', 'supervisor', 'district_admin', 'admin'] })
+  @IsOptional() @IsIn(['duty_officer', 'supervisor', 'district_admin', 'admin'])
   role?: string;
 
   @ApiProperty({ required: false, description: '按站点过滤' })

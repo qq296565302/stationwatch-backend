@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import {
+  District,
   Station,
   User,
   DutyRecord,
@@ -20,6 +21,7 @@ import {
 @Injectable()
 export class StorageService {
   // 主存储
+  private districts = new Map<number, District>();
   private stations = new Map<number, Station>();
   private users = new Map<number, User>();
   private records = new Map<number, DutyRecord>();
@@ -41,6 +43,7 @@ export class StorageService {
 
   // ID 自增
   private nextId = {
+    district: 1,
     station: 1,
     user: 1,
     record: 1,
@@ -59,6 +62,39 @@ export class StorageService {
 
   nextIdOf(key: keyof typeof this.nextId): number {
     return this.nextId[key]++;
+  }
+
+  /** 用实际数据回算 nextId，避免种子 ID 与计数器冲突（seed 后调用） */
+  recomputeNextId() {
+    const max = <T extends { id: number }>(arr: T[]): number =>
+      arr.length > 0 ? Math.max(...arr.map((x) => x.id)) : 0;
+    this.nextId.district = max(Array.from(this.districts.values())) + 1;
+    this.nextId.station = max(Array.from(this.stations.values())) + 1;
+    this.nextId.user = max(Array.from(this.users.values())) + 1;
+    this.nextId.record = max(Array.from(this.records.values())) + 1;
+    this.nextId.item = max(Array.from(this.items.values())) + 1;
+    this.nextId.businessType = max(Array.from(this.businessTypes.values())) + 1;
+    this.nextId.acceptContent = max(Array.from(this.acceptContents.values())) + 1;
+    this.nextId.resultOption = max(Array.from(this.resultOptions.values())) + 1;
+    this.nextId.officer = max(Array.from(this.officers.values())) + 1;
+    this.nextId.export = max(Array.from(this.exportHistory.values())) + 1;
+    this.nextId.operationLog =
+      this.operationLogs.length > 0 ? Math.max(...this.operationLogs.map((l) => l.id)) + 1 : 1;
+  }
+
+  // ============ District ============
+  getDistricts(): District[] {
+    return Array.from(this.districts.values());
+  }
+  getDistrict(id: number): District | undefined {
+    return this.districts.get(id);
+  }
+  saveDistrict(d: District): District {
+    this.districts.set(d.id, d);
+    return d;
+  }
+  deleteDistrict(id: number): boolean {
+    return this.districts.delete(id);
   }
 
   // ============ Station ============

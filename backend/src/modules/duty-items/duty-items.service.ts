@@ -5,17 +5,21 @@ import { UserPayload } from '../../common/types/user-payload';
 import { BusinessException, BusinessCode } from '../../common/exceptions/business.exception';
 import { CreateDutyItemDto, UpdateDutyItemDto } from './dto/duty-items.dto';
 import { Role } from '../../common/types/role.enum';
+import { ScopeService } from '../../common/scope/scope.service';
 
 @Injectable()
 export class DutyItemsService {
   private readonly logger = new Logger(DutyItemsService.name);
 
-  constructor(private readonly storage: StorageService) {}
+  constructor(
+    private readonly storage: StorageService,
+    private readonly scope: ScopeService,
+  ) {}
 
   list(recordId: number, user?: UserPayload): DutyItem[] {
     const r = this.storage.getRecord(recordId);
     if (!r) throw new BusinessException(BusinessCode.RECORD_NOT_FOUND, '记录不存在');
-    if (user && user.role !== Role.ADMIN && user.stationId && r.stationId !== user.stationId) {
+    if (user && !this.scope.canAccessStation(user, r.stationId)) {
       throw new BusinessException(BusinessCode.FORBIDDEN, '无权访问');
     }
     return this.storage.getItemsByRecord(recordId);
@@ -149,9 +153,12 @@ export class DutyItemsService {
   }
 
   // ====== 内部 ======
-  // 站点归属校验：非管理员只能操作本所记录的工单
+  // 站点归属校验：区县管理员无编辑权限；非管理员只能操作本所记录的工单
   private assertStationScope(record: any, user: UserPayload) {
-    if (user.role !== Role.ADMIN && record.stationId !== user.stationId) {
+    if (user.role === Role.DISTRICT_ADMIN) {
+      throw new BusinessException(BusinessCode.FORBIDDEN, '区县管理员无值班记录编辑权限');
+    }
+    if (user.role !== Role.ADMIN && !this.scope.canAccessStation(user, record.stationId)) {
       throw new BusinessException(BusinessCode.FORBIDDEN, '无权操作其他站点记录的工单');
     }
   }

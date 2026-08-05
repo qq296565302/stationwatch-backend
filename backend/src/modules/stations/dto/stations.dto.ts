@@ -10,6 +10,10 @@ export class CreateStationDto {
   @IsString() @IsNotEmpty() @MaxLength(20)
   code: string;
 
+  @ApiProperty({ example: 1, description: '所属区县 ID', required: false })
+  @IsOptional() @IsInt()
+  districtId?: number;
+
   @ApiProperty({ example: '马尚', required: false })
   @IsOptional() @IsString()
   region?: string;
@@ -30,6 +34,10 @@ export class CreateStationDto {
   @IsOptional() @IsInt() @Min(1) @Max(50)
   maxDutyItemsPerRecord?: number;
 
+  @ApiProperty({ example: 45, required: false, minimum: 5, maximum: 1440 })
+  @IsOptional() @IsInt() @Min(5) @Max(1440)
+  orderTimeLimit?: number;
+
   @ApiProperty({ example: true, required: false })
   @IsOptional() @IsBoolean()
   isActive?: boolean;
@@ -43,6 +51,10 @@ export class UpdateStationDto {
   @ApiProperty({ example: 'EAST', required: false })
   @IsOptional() @IsString()
   code?: string;
+
+  @ApiProperty({ example: 1, description: '所属区县 ID（区县管理员不可修改）', required: false })
+  @IsOptional() @IsInt()
+  districtId?: number;
 
   @ApiProperty({ example: '东郊', required: false })
   @IsOptional() @IsString()
@@ -63,6 +75,10 @@ export class UpdateStationDto {
   @ApiProperty({ example: 11, required: false, minimum: 1, maximum: 50 })
   @IsOptional() @IsInt() @Min(1) @Max(50)
   maxDutyItemsPerRecord?: number;
+
+  @ApiProperty({ example: 45, required: false, minimum: 5, maximum: 1440 })
+  @IsOptional() @IsInt() @Min(5) @Max(1440)
+  orderTimeLimit?: number;
 
   @ApiProperty({ example: true, required: false })
   @IsOptional() @IsBoolean()

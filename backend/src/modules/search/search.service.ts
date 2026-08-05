@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { StorageService } from '../../storage/storage.service';
 import { UserPayload } from '../../common/types/user-payload';
-import { Role } from '../../common/types/role.enum';
+import { ScopeService } from '../../common/scope/scope.service';
 
 export interface SearchResult {
   type: 'record' | 'item';
@@ -15,17 +15,18 @@ export interface SearchResult {
 
 @Injectable()
 export class SearchService {
-  constructor(private readonly storage: StorageService) {}
+  constructor(
+    private readonly storage: StorageService,
+    private readonly scope: ScopeService,
+  ) {}
 
   search(q: string, user: UserPayload, limit = 20): SearchResult[] {
     if (!q || !q.trim()) return [];
     const pattern = q.trim().toLowerCase();
 
     let records = this.storage.getRecords();
-    // duty_officer/supervisor 只能搜索本所
-    if (user.role !== Role.ADMIN && user.stationId) {
-      records = records.filter(r => r.stationId === user.stationId);
-    }
+    // 按角色可见范围过滤：admin 全部、district_admin 本区县、其余本所
+    records = this.scope.filterRecordsByStation(records, user);
 
     const results: SearchResult[] = [];
 
