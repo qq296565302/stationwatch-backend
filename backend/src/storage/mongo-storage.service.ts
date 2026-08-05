@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { MongoClient, Db } from 'mongodb';
 import * as bcrypt from 'bcryptjs';
 import {
+  District,
   Station,
   User,
   DutyRecord,
@@ -14,7 +15,8 @@ import {
   OperationLog,
   RefreshTokenEntry,
 } from './types';
-import { seedInitialData } from './seed';
+import { seedInitialData, seedDistricts, ensureDemoUsers } from './seed';
+import { Role } from '../common/types/role.enum';
 
 /**
  * MongoDB 持久化的存储服务
@@ -44,6 +46,7 @@ export class MongoStorageService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(MongoStorageService.name);
 
   // 主存储
+  private districts = new Map<number, District>();
   private stations = new Map<number, Station>();
   private users = new Map<number, User>();
   private records = new Map<number, DutyRecord>();
@@ -65,6 +68,7 @@ export class MongoStorageService implements OnModuleInit, OnModuleDestroy {
 
   // ID 自增
   private nextId: Record<string, number> = {
+    district: 1,
     station: 1,
     user: 1,
     record: 1,
@@ -107,6 +111,16 @@ export class MongoStorageService implements OnModuleInit, OnModuleDestroy {
     try {
       await this.connectAndLoad();
       this.migrateLegacySchedule();
+      // 旧站点数据缺工单时限，统一回填默认 45（幂等）
+      if (this.backfillOrderTimeLimit()) {
+        this.logger.log('[MongoStorage] 已为旧站点数据回填工单时限 orderTimeLimit=45');
+        await this.flush();
+      }
+      // 三级组织迁移：区县 + districtId 回填（幂等，保留历史记录）
+      if (this.backfillOrgHierarchy()) {
+        this.logger.log('[MongoStorage] 已执行 v3 组织层级迁移（区县 + districtId 回填）');
+        await this.flush();
+      }
       // 首次启动或库为空时写入种子数据
       if (this.stations.size === 0) {
         this.logger.log('[MongoStorage] 库中无数据，写入种子数据...');
@@ -140,6 +154,50 @@ export class MongoStorageService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  /** 工单时限回填：旧站点数据缺 orderTimeLimit 字段，统一补默认 45，返回是否发生变更 */
+  private backfillOrderTimeLimit(): boolean {
+    let changed = false;
+    this.stations.forEach((s) => {
+      if (!s.orderTimeLimit) {
+        s.orderTimeLimit = 45;
+        changed = true;
+      }
+    });
+    return changed;
+  }
+
+  /**
+   * v3 组织层级回填（幂等）：区县空 → 灌淄博五区三县；站点缺 districtId → 补 1（张店）；
+   * 用户缺 districtId → admin 补 null(市级)、其余按所属站点派生。返回是否发生变更。
+   */
+  private backfillOrgHierarchy(): boolean {
+    let changed = false;
+    if (this.districts.size === 0) {
+      seedDistricts(this as any);
+      changed = true;
+    }
+    this.stations.forEach((s) => {
+      if (typeof s.districtId !== 'number') {
+        s.districtId = 1;
+        changed = true;
+      }
+    });
+    this.users.forEach((u) => {
+      if (typeof u.districtId !== 'number') {
+        if (u.role === Role.ADMIN) {
+          u.districtId = null;
+        } else {
+          const st = u.stationId != null ? this.stations.get(u.stationId) : undefined;
+          u.districtId = st?.districtId ?? null;
+        }
+        changed = true;
+      }
+    });
+    // 补齐演示账号（幂等）：区县管理员 zd_admin + 所长 dongjiao_s
+    if (ensureDemoUsers(this as any)) changed = true;
+    return changed;
+  }
+
   async onModuleDestroy() {
     if (this.flushTimer) {
       clearTimeout(this.flushTimer);
@@ -171,8 +229,9 @@ export class MongoStorageService implements OnModuleInit, OnModuleDestroy {
     await this.db.command({ ping: 1 });
 
     // 并行全量拉取，投影剔除 _id 保证对象与实体类型一致
-    const [stations, users, records, items, dictionary, configs, exportsArr, logs, tokens] =
+    const [districts, stations, users, records, items, dictionary, configs, exportsArr, logs, tokens] =
       await Promise.all([
+        this.db.collection('districts').find({}, { projection: { _id: 0 } }).toArray(),
         this.db.collection('stations').find({}, { projection: { _id: 0 } }).toArray(),
         this.db.collection('users').find({}, { projection: { _id: 0 } }).toArray(),
         this.db.collection('records').find({}, { projection: { _id: 0 } }).toArray(),
@@ -184,6 +243,7 @@ export class MongoStorageService implements OnModuleInit, OnModuleDestroy {
         this.db.collection('refreshTokens').find({}, { projection: { _id: 0 } }).toArray(),
       ]);
 
+    this.districts = toMap<number, District>(districts as unknown as District[], (x) => x.id);
     this.stations = toMap<number, Station>(stations as unknown as Station[], (x) => x.id);
     this.users = toMap<number, User>(users as unknown as User[], (x) => x.id);
     this.records = toMap<number, DutyRecord>(records as unknown as DutyRecord[], (x) => x.id);
@@ -224,6 +284,7 @@ export class MongoStorageService implements OnModuleInit, OnModuleDestroy {
   private recomputeNextId() {
     const max = <T extends { id: number }>(arr: T[]): number =>
       arr.length > 0 ? Math.max(...arr.map((x) => x.id)) : 0;
+    this.nextId.district = max(Array.from(this.districts.values())) + 1;
     this.nextId.station = max(Array.from(this.stations.values())) + 1;
     this.nextId.user = max(Array.from(this.users.values())) + 1;
     this.nextId.record = max(Array.from(this.records.values())) + 1;
@@ -244,6 +305,7 @@ export class MongoStorageService implements OnModuleInit, OnModuleDestroy {
         { key: { type: 1, id: 1 }, name: 'uniq_type_id', unique: true },
         { key: { type: 1, isActive: 1, sortOrder: 1 }, name: 'dict_query' },
       ]),
+      db.collection('districts').createIndexes([{ key: { id: 1 }, unique: true }]),
       db.collection('stations').createIndexes([{ key: { id: 1 }, unique: true }]),
       db.collection('users').createIndexes([
         { key: { id: 1 }, unique: true },
@@ -301,6 +363,7 @@ export class MongoStorageService implements OnModuleInit, OnModuleDestroy {
       const db = this.db;
       if (!db) throw new Error('MongoDB 未连接');
       try {
+        await this.syncCollection('districts', Array.from(this.districts.values()), 'id', (d: any) => d.id);
         await this.syncCollection('stations', Array.from(this.stations.values()), 'id', (d: any) => d.id);
         await this.syncCollection('users', Array.from(this.users.values()), 'id', (d: any) => d.id);
         await this.syncCollection('records', Array.from(this.records.values()), 'id', (d: any) => d.id);
@@ -394,6 +457,24 @@ export class MongoStorageService implements OnModuleInit, OnModuleDestroy {
 
   nextIdOf(key: keyof typeof this.nextId): number {
     return this.nextId[key]++;
+  }
+
+  // ============ District ============
+  getDistricts(): District[] {
+    return Array.from(this.districts.values());
+  }
+  getDistrict(id: number): District | undefined {
+    return this.districts.get(id);
+  }
+  saveDistrict(d: District): District {
+    this.districts.set(d.id, d);
+    this.markDirty();
+    return d;
+  }
+  deleteDistrict(id: number): boolean {
+    const ok = this.districts.delete(id);
+    if (ok) this.markDirty();
+    return ok;
   }
 
   // ============ Station ============

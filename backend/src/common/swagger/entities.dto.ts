@@ -1,5 +1,22 @@
 import { ApiProperty } from '@nestjs/swagger';
 
+export class DistrictDto {
+  @ApiProperty({ example: 1 })
+  id: number;
+  @ApiProperty({ example: '张店' })
+  name: string;
+  @ApiProperty({ example: 'ZD' })
+  code: string;
+  @ApiProperty({ example: 1 })
+  sortOrder: number;
+  @ApiProperty({ example: true })
+  isActive: boolean;
+  @ApiProperty()
+  createdAt: string;
+  @ApiProperty()
+  updatedAt: string;
+}
+
 export class UserPublicDto {
   @ApiProperty({ example: 1 })
   id: number;
@@ -7,10 +24,15 @@ export class UserPublicDto {
   username: string;
   @ApiProperty({ example: '系统管理员' })
   realName: string;
-  @ApiProperty({ example: 'admin', enum: ['duty_officer', 'supervisor', 'admin'] })
+  @ApiProperty({
+    example: 'admin',
+    enum: ['duty_officer', 'supervisor', 'district_admin', 'admin'],
+  })
   role: string;
   @ApiProperty({ example: 1, nullable: true })
   stationId: number | null;
+  @ApiProperty({ example: 1, nullable: true })
+  districtId: number | null;
   @ApiProperty({ example: true })
   isActive: boolean;
   @ApiProperty({ example: '2026-07-31T08:00:00.000Z', nullable: true })
@@ -30,6 +52,8 @@ export class StationDto {
   name: string;
   @ApiProperty({ example: 'EAST' })
   code: string;
+  @ApiProperty({ example: 1, description: '所属区县' })
+  districtId: number;
   @ApiProperty({ example: '东郊', nullable: true })
   region: string | null;
   @ApiProperty({ example: '10kV', nullable: true })
@@ -40,6 +64,8 @@ export class StationDto {
   transformers: number;
   @ApiProperty({ example: 11 })
   maxDutyItemsPerRecord: number;
+  @ApiProperty({ example: 45 })
+  orderTimeLimit: number;
   @ApiProperty({ example: true })
   isActive: boolean;
   @ApiProperty()

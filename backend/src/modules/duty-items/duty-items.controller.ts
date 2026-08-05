@@ -10,7 +10,7 @@ import { DutyItemDto } from '../../common/swagger/entities.dto';
 
 @ApiTags('05. 值班工单')
 @ApiBearerAuth('JWT')
-@Roles(Role.DUTY_OFFICER, Role.SUPERVISOR, Role.ADMIN)
+@Roles(Role.DUTY_OFFICER, Role.SUPERVISOR, Role.DISTRICT_ADMIN, Role.ADMIN)
 @Controller('records/:recordId/items')
 export class DutyItemsController {
   constructor(private readonly service: DutyItemsService) {}

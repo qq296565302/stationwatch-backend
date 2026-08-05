@@ -8,6 +8,7 @@ import { RolesGuard } from './common/guards/roles.guard';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { StationsModule } from './modules/stations/stations.module';
+import { DistrictsModule } from './modules/districts/districts.module';
 import { DutyRecordsModule } from './modules/duty-records/duty-records.module';
 import { DutyItemsModule } from './modules/duty-items/duty-items.module';
 import { DictionariesModule } from './modules/dictionaries/dictionaries.module';
@@ -30,6 +31,7 @@ import { ScheduleModule } from './modules/schedule/schedule.module';
     AuthModule,
     UsersModule,
     StationsModule,
+    DistrictsModule,
     DutyRecordsModule,
     DutyItemsModule,
     DictionariesModule,

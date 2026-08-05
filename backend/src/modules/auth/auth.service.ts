@@ -78,6 +78,7 @@ export class AuthService {
         username: user.username,
         role: user.role,
         stationId: user.stationId,
+        districtId: user.districtId ?? null,
       },
       { expiresIn: this.config.get('JWT_ACCESS_TOKEN_EXPIRE', '2h') },
     );
@@ -113,13 +114,20 @@ export class AuthService {
   }
 
   // ====== 内部工具 ======
-  private generateTokens(user: { id: number; username: string; role: string; stationId: number | null }) {
+  private generateTokens(user: {
+    id: number;
+    username: string;
+    role: string;
+    stationId: number | null;
+    districtId: number | null;
+  }) {
     const accessToken = this.jwt.sign(
       {
         sub: user.id,
         username: user.username,
         role: user.role,
         stationId: user.stationId,
+        districtId: user.districtId ?? null,
       },
       { expiresIn: this.config.get('JWT_ACCESS_TOKEN_EXPIRE', '2h') },
     );

@@ -4,6 +4,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as bcrypt from 'bcryptjs';
 import {
+  District,
   Station,
   User,
   DutyRecord,
@@ -15,7 +16,8 @@ import {
   OperationLog,
   RefreshTokenEntry,
 } from './types';
-import { seedInitialData } from './seed';
+import { seedInitialData, seedDistricts, ensureDemoUsers } from './seed';
+import { Role } from '../common/types/role.enum';
 
 /**
  * JSON 文件持久化的存储服务
@@ -29,7 +31,7 @@ import { seedInitialData } from './seed';
  * - 损坏文件：自动备份为 .corrupted.<ts> 并重建
  */
 
-const STORAGE_VERSION = 2;
+const STORAGE_VERSION = 3;
 const DEFAULT_FLUSH_INTERVAL_MS = 2000;
 const OPERATION_LOG_LIMIT = 10000;
 
@@ -37,6 +39,7 @@ interface PersistShape {
   version: number;
   savedAt: string;
   data: {
+    districts: District[];
     stations: Station[];
     users: User[];
     records: DutyRecord[];
@@ -58,6 +61,7 @@ export class FileStorageService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(FileStorageService.name);
 
   // 主存储
+  private districts = new Map<number, District>();
   private stations = new Map<number, Station>();
   private users = new Map<number, User>();
   private records = new Map<number, DutyRecord>();
@@ -79,6 +83,7 @@ export class FileStorageService implements OnModuleInit, OnModuleDestroy {
 
   // ID 自增
   private nextId: Record<string, number> = {
+    district: 1,
     station: 1,
     user: 1,
     record: 1,
@@ -112,6 +117,7 @@ export class FileStorageService implements OnModuleInit, OnModuleDestroy {
     const existed = await this.fileExists();
     await this.load();
     this.migrateLegacySchedule();
+    this.backfillOrderTimeLimit();
     // 加载后判断是否需要 seed：首次启动 OR 版本不匹配被备份后 OR 文件被损坏
     const needsSeed = !existed || this.stations.size === 0;
     if (needsSeed) {
@@ -136,6 +142,57 @@ export class FileStorageService implements OnModuleInit, OnModuleDestroy {
         updatedAt: this.now(),
       });
       this.logger.log('[FileStorage] 已迁移排班配置 duty.schedule → duty.schedule.1');
+    }
+  }
+
+  /** 工单时限回填：旧站点数据缺 orderTimeLimit 字段，统一补默认 45（幂等） */
+  private backfillOrderTimeLimit() {
+    let changed = false;
+    this.stations.forEach((s) => {
+      if (!s.orderTimeLimit) {
+        s.orderTimeLimit = 45;
+        changed = true;
+      }
+    });
+    if (changed) {
+      this.logger.log('[FileStorage] 已为旧站点数据回填工单时限 orderTimeLimit=45');
+      this.markDirty();
+    }
+  }
+
+  /**
+   * v3 组织层级迁移：区县 + districtId 回填（幂等）
+   * 区县为空 → 灌入淄博五区三县；站点缺 districtId → 补 1（张店）；
+   * 用户缺 districtId → admin 补 null(市级)、其余按所属站点派生
+   */
+  private migrate() {
+    let changed = false;
+    if (this.districts.size === 0) {
+      seedDistricts(this as any);
+      changed = true;
+    }
+    this.stations.forEach((s) => {
+      if (typeof s.districtId !== 'number') {
+        s.districtId = 1; // 现有供电所默认归张店区
+        changed = true;
+      }
+    });
+    this.users.forEach((u) => {
+      if (typeof u.districtId !== 'number') {
+        if (u.role === Role.ADMIN) {
+          u.districtId = null; // 市级超管无区县归属
+        } else {
+          const st = u.stationId != null ? this.stations.get(u.stationId) : undefined;
+          u.districtId = st?.districtId ?? null;
+        }
+        changed = true;
+      }
+    });
+    // 补齐演示账号（幂等）：区县管理员 zd_admin + 所长 dongjiao_s
+    if (ensureDemoUsers(this as any)) changed = true;
+    if (changed) {
+      this.logger.log('[FileStorage] 已执行 v3 组织层级迁移（区县 + districtId + 演示账号回填）');
+      this.markDirty();
     }
   }
 
@@ -198,12 +255,24 @@ export class FileStorageService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    if (!parsed || parsed.version !== STORAGE_VERSION) {
+    if (!parsed || typeof parsed.version !== 'number') {
+      this.logger.warn('存储文件缺少版本信息，备份后重建');
+      await this.backupCorrupted();
+      return;
+    }
+    // 文件版本比代码新（降级/回退场景）→ 备份后重建；旧版本 → 温和迁移（保留数据）
+    if (parsed.version > STORAGE_VERSION) {
       this.logger.warn(
-        `存储文件版本不匹配 (file=${parsed?.version}, expected=${STORAGE_VERSION})，备份后重建`,
+        `存储文件版本过新 (file=${parsed.version}, expected=${STORAGE_VERSION})，备份后重建`,
       );
       await this.backupCorrupted();
       return;
+    }
+    const isLegacy = parsed.version < STORAGE_VERSION;
+    if (isLegacy) {
+      this.logger.log(
+        `存储文件版本较低 (file=${parsed.version}, expected=${STORAGE_VERSION})，执行温和迁移（保留数据）`,
+      );
     }
 
     const d = (parsed.data || {}) as PersistShape['data'];
@@ -228,6 +297,9 @@ export class FileStorageService implements OnModuleInit, OnModuleDestroy {
     // 用实际数据回算 nextId，避免种子 ID 与计数器冲突
     this.recomputeNextId();
 
+    // 旧版本数据 → 温和迁移（区县 + districtId 回填），不丢历史记录
+    if (isLegacy) this.migrate();
+
     this.logger.log(
       `[FileStorage] 已加载: stations=${this.stations.size}, users=${this.users.size}, records=${this.records.size}, items=${this.items.size}, systemConfigs=${this.systemConfigs.size}`,
     );
@@ -236,6 +308,7 @@ export class FileStorageService implements OnModuleInit, OnModuleDestroy {
   private recomputeNextId() {
     const max = <T extends { id: number }>(arr: T[]): number =>
       arr.length > 0 ? Math.max(...arr.map((x) => x.id)) : 0;
+    this.nextId.district = max(Array.from(this.districts.values())) + 1;
     this.nextId.station = max(Array.from(this.stations.values())) + 1;
     this.nextId.user = max(Array.from(this.users.values())) + 1;
     this.nextId.record = max(Array.from(this.records.values())) + 1;
@@ -282,6 +355,7 @@ export class FileStorageService implements OnModuleInit, OnModuleDestroy {
       version: STORAGE_VERSION,
       savedAt: this.now(),
       data: {
+        districts: Array.from(this.districts.values()),
         stations: Array.from(this.stations.values()),
         users: Array.from(this.users.values()),
         records: Array.from(this.records.values()),
@@ -317,6 +391,24 @@ export class FileStorageService implements OnModuleInit, OnModuleDestroy {
 
     this.writeChain = task.catch(() => undefined);
     await task;
+  }
+
+  // ============ District ============
+  getDistricts(): District[] {
+    return Array.from(this.districts.values());
+  }
+  getDistrict(id: number): District | undefined {
+    return this.districts.get(id);
+  }
+  saveDistrict(d: District): District {
+    this.districts.set(d.id, d);
+    this.markDirty();
+    return d;
+  }
+  deleteDistrict(id: number): boolean {
+    const ok = this.districts.delete(id);
+    if (ok) this.markDirty();
+    return ok;
   }
 
   // ============ Station ============

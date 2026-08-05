@@ -2,11 +2,14 @@ import { Injectable } from '@nestjs/common';
 import dayjs = require('dayjs');
 import { StorageService } from '../../storage/storage.service';
 import { UserPayload } from '../../common/types/user-payload';
-import { Role } from '../../common/types/role.enum';
+import { ScopeService } from '../../common/scope/scope.service';
 
 @Injectable()
 export class DashboardService {
-  constructor(private readonly storage: StorageService) {}
+  constructor(
+    private readonly storage: StorageService,
+    private readonly scope: ScopeService,
+  ) {}
 
   /**
    * 顶部统计
@@ -175,14 +178,11 @@ export class DashboardService {
     };
   }
 
-  /** 设备状态（从 station 聚合） */
+  /** 设备状态（从 station 聚合，按可见范围过滤） */
   equipmentStatus(user: UserPayload, stationId?: number) {
-    let stations = this.storage.getStations().filter(s => s.isActive);
-    if (user.role === Role.ADMIN) {
-      if (stationId) stations = stations.filter(s => s.id === stationId);
-    } else if (user.stationId) {
-      stations = stations.filter(s => s.id === user.stationId);
-    }
+    const ids = new Set(this.scope.visibleStationIds(user));
+    let stations = this.storage.getStations().filter(s => s.isActive && ids.has(s.id));
+    if (stationId) stations = stations.filter(s => s.id === stationId);
     return stations.map(s => ({
       stationId: s.id,
       stationName: s.name,
@@ -192,14 +192,8 @@ export class DashboardService {
     }));
   }
 
-  /** 统一记录范围：admin 按传入 stationId（缺省全站），其余角色强制本所 */
+  /** 统一记录范围：admin/district_admin 按可见站（可传 stationId 收敛单站），其余角色强制本所 */
   private scopeRecords(user: UserPayload, stationId?: number) {
-    let records = this.storage.getRecords();
-    if (user.role === Role.ADMIN) {
-      if (stationId) records = records.filter(r => r.stationId === stationId);
-    } else if (user.stationId) {
-      records = records.filter(r => r.stationId === user.stationId);
-    }
-    return records;
+    return this.scope.filterRecordsByStation(this.storage.getRecords(), user, stationId);
   }
 }

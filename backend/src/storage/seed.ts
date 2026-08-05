@@ -1,24 +1,115 @@
 import { StorageService } from './storage.service';
-import { Station, User, DictionaryItem, SystemConfig } from './types';
+import { Station, User, DictionaryItem, SystemConfig, District } from './types';
 
 /**
- * 种子数据：站点、用户、字典、系统配置
+ * 种子数据：区县、站点、用户、字典、系统配置
  * 必须与前端 LoginView 演示账号保持一致
  */
+
+/** 淄博「五区三县」8 个区县供电中心 */
+export const DISTRICTS: Array<{ id: number; name: string; code: string }> = [
+  { id: 1, name: '张店', code: 'ZD' },
+  { id: 2, name: '临淄', code: 'LZ' },
+  { id: 3, name: '淄川', code: 'ZC' },
+  { id: 4, name: '博山', code: 'BS' },
+  { id: 5, name: '周村', code: 'ZCN' },
+  { id: 6, name: '桓台', code: 'HT' },
+  { id: 7, name: '高青', code: 'GQ' },
+  { id: 8, name: '沂源', code: 'YY' },
+];
+
+/**
+ * 灌入区县种子数据（幂等：已有区县则跳过）
+ * 供 seed 首次初始化与 file/mongo 旧数据迁移共用
+ */
+export function seedDistricts(storage: StorageService) {
+  if (storage.getDistricts().length > 0) return; // 幂等，避免覆盖已有区县
+  const now = storage.now();
+  DISTRICTS.forEach((d, i) => {
+    const district: District = {
+      id: d.id,
+      name: d.name,
+      code: d.code,
+      sortOrder: i + 1,
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+    };
+    storage.saveDistrict(district);
+  });
+}
+
+/**
+ * 补齐演示账号（幂等）：张店区管理员 zd_admin + 东郊所长 dongjiao_s
+ * 供 file/mongo 旧数据增量迁移时调用（旧种子数据中没有这两个账号）
+ * 返回是否创建了新账号
+ */
+export function ensureDemoUsers(storage: StorageService): boolean {
+  const bcrypt = require('bcryptjs');
+  let created = false;
+  const now = storage.now();
+
+  if (!storage.getUserByUsername('zd_admin')) {
+    storage.saveUser({
+      id: storage.nextIdOf('user'),
+      username: 'zd_admin',
+      passwordHash: bcrypt.hashSync('zd123456', 10),
+      realName: '张店区管理员',
+      role: 'district_admin',
+      stationId: null,
+      districtId: 1,
+      isActive: true,
+      lastLoginAt: null,
+      lastLoginIp: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+    created = true;
+  }
+
+  if (!storage.getUserByUsername('dongjiao_s')) {
+    // 绑定到第一个张店区站点（缺省东郊 id=1）
+    const zhangdianStation =
+      storage.getStations().find((s) => s.districtId === 1) ?? storage.getStation(1) ?? null;
+    storage.saveUser({
+      id: storage.nextIdOf('user'),
+      username: 'dongjiao_s',
+      passwordHash: bcrypt.hashSync('@zbdl-95598', 10),
+      realName: '东郊所长',
+      role: 'supervisor',
+      stationId: zhangdianStation?.id ?? null,
+      districtId: 1,
+      isActive: true,
+      lastLoginAt: null,
+      lastLoginIp: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+    created = true;
+  }
+
+  return created;
+}
+
 export function seedInitialData(storage: StorageService) {
   const now = storage.now();
 
-  // === 站点（仅 1 个：东郊供电所） ===
+  // === 区县（淄博五区三县 8 个） ===
+  seedDistricts(storage);
+
+  // === 站点（仅 1 个：东郊供电所，归属张店区 districtId=1） ===
   const stations: Station[] = [
     {
       id: 1,
       name: '东郊供电所',
       code: 'EAST',
+      districtId: 1, // 张店
       region: '东郊',
       voltage: '10kV',
       feeders: 8,
       transformers: 24,
       maxDutyItemsPerRecord: 11,
+      orderTimeLimit: 45,
       isActive: true,
       createdAt: now,
       updatedAt: now,
@@ -27,14 +118,44 @@ export function seedInitialData(storage: StorageService) {
   stations.forEach((s) => storage.saveStation(s));
 
   // === 用户（必须匹配前端 LoginView 演示账号） ===
+  const bcrypt = require('bcryptjs');
   const users: User[] = [
     {
       id: 1,
       username: 'admin',
-      passwordHash: '',
+      passwordHash: bcrypt.hashSync('admin123', 10),
       realName: '超级管理员',
-      role: 'admin',
+      role: 'admin', // 市级超级管理员（国网淄博供电公司）
+      stationId: null,
+      districtId: null,
+      isActive: true,
+      lastLoginAt: null,
+      lastLoginIp: null,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: 2,
+      username: 'zd_admin',
+      passwordHash: bcrypt.hashSync('zd123456', 10),
+      realName: '张店区管理员',
+      role: 'district_admin', // 区县管理员（张店区）
+      stationId: null,
+      districtId: 1,
+      isActive: true,
+      lastLoginAt: null,
+      lastLoginIp: null,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: 3,
+      username: 'dongjiao_s',
+      passwordHash: bcrypt.hashSync('@zbdl-95598', 10),
+      realName: '东郊所长',
+      role: 'supervisor', // 所长（东郊供电所）
       stationId: 1,
+      districtId: 1,
       isActive: true,
       lastLoginAt: null,
       lastLoginIp: null,
@@ -42,10 +163,6 @@ export function seedInitialData(storage: StorageService) {
       updatedAt: now,
     },
   ];
-
-  // 同步加密密码
-  const bcrypt = require('bcryptjs');
-  users[0].passwordHash = bcrypt.hashSync('admin123', 10);
   users.forEach((u) => storage.saveUser(u));
 
   // === 15 名值班员（id 4-18，初始排班 5 组每组 3 人，统一密码） ===
@@ -78,6 +195,7 @@ export function seedInitialData(storage: StorageService) {
       realName: o.realName,
       role: 'duty_officer',
       stationId: 1,
+      districtId: 1,
       isActive: true,
       lastLoginAt: null,
       lastLoginIp: null,
@@ -201,10 +319,13 @@ export function seedInitialData(storage: StorageService) {
   ];
   configs.forEach((c) => storage.saveSystemConfig(c));
 
-  console.log('[Seed] 初始数据已加载（spec v2）');
-  console.log('  - 站点: 1 个 (东郊供电所)');
-  console.log('  - 用户: 16 个');
-  console.log('    admin / admin123        → 超级管理员 (管理员, stationId=1)');
+  console.log('[Seed] 初始数据已加载（spec v3，三级组织）');
+  console.log('  - 区县: 8 个（淄博五区三县）');
+  console.log('  - 站点: 1 个 (东郊供电所，张店区)');
+  console.log('  - 用户: 18 个');
+  console.log('    admin / admin123      → 市级超级管理员 (管理员)');
+  console.log('    zd_admin / zd123456   → 张店区管理员 (区县管理员)');
+  console.log('    dongjiao_s / @zbdl-95598 → 东郊所长 (所长)');
   console.log('    15 名值班员统一密码 @zbdl-95598（lidong/wangyong/... 等拼音账号）');
   console.log('  - 字典: 业务类型 6 / 受理内容 6 / 处理结果 7');
   console.log('  - 值班员: 来自 users 表按 stationId 过滤');

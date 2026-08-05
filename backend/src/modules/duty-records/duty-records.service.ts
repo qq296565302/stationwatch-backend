@@ -14,6 +14,7 @@ import {
 import { PaginatedResult } from '../../common/types/pagination';
 import { Role } from '../../common/types/role.enum';
 import { ScheduleService } from '../schedule/schedule.service';
+import { ScopeService } from '../../common/scope/scope.service';
 
 @Injectable()
 export class DutyRecordsService {
@@ -24,6 +25,7 @@ export class DutyRecordsService {
   constructor(
     private readonly storage: StorageService,
     private readonly schedule: ScheduleService,
+    private readonly scope: ScopeService,
   ) {}
 
   /**
@@ -68,8 +70,12 @@ export class DutyRecordsService {
     // 验证站点存在
     const station = this.storage.getStation(dto.stationId);
     if (!station) throw new BusinessException(BusinessCode.NOT_FOUND, '站点不存在');
+    // 区县管理员无值班记录编辑权限
+    if (user.role === Role.DISTRICT_ADMIN) {
+      throw new BusinessException(BusinessCode.FORBIDDEN, '区县管理员无值班记录编辑权限');
+    }
     // 站点归属校验：非管理员只能写自己站点
-    if (user.role !== Role.ADMIN && dto.stationId !== user.stationId) {
+    if (user.role !== Role.ADMIN && !this.scope.canAccessStation(user, dto.stationId)) {
       throw new BusinessException(BusinessCode.FORBIDDEN, '无权操作其他站点的记录');
     }
 
@@ -178,10 +184,8 @@ export class DutyRecordsService {
     this.autoLockExpired();
     let records = this.storage.getRecords();
 
-    // 权限过滤：duty_officer/supervisor 只能看本所，admin 看全部（可再用 q.stationId 过滤）
-    if (user.role !== Role.ADMIN && user.stationId) {
-      records = records.filter(r => r.stationId === user.stationId);
-    }
+    // 权限过滤：admin/district_admin 看可见站（可再按 q.stationId 收敛单站），其余角色强制本所
+    records = this.scope.filterRecordsByStation(records, user, q.stationId);
 
     if (q.startDate) records = records.filter(r => r.recordDate >= q.startDate!);
     if (q.endDate) records = records.filter(r => r.recordDate <= q.endDate!);
@@ -208,8 +212,8 @@ export class DutyRecordsService {
   async today(user: UserPayload, stationId?: number): Promise<DutyRecordDetail | null> {
     this.autoLockExpired();
     const today = dayjs().format('YYYY-MM-DD');
-    // admin 切站时用传入 stationId，其余角色固定本所
-    const sid = user.role === Role.ADMIN ? (stationId ?? user.stationId) : user.stationId;
+    // admin 切站时用传入 stationId，其余角色固定本所；区县管理员缺省回退本区县首站
+    const sid = this.scope.resolveStationId(user, stationId);
     if (!sid) return null;
     const record = this.storage.getRecords().find(
       r => r.stationId === sid && r.recordDate === today,
@@ -220,11 +224,7 @@ export class DutyRecordsService {
   async findByDate(dto: FindByDateDto, user: UserPayload, stationId?: number): Promise<DutyRecordDetail | null> {
     this.autoLockExpired();
     let records = this.storage.getRecords().filter(r => r.recordDate === dto.date);
-    if (user.role !== Role.ADMIN && user.stationId) {
-      records = records.filter(r => r.stationId === user.stationId);
-    } else if (stationId) {
-      records = records.filter(r => r.stationId === stationId);
-    }
+    records = this.scope.filterRecordsByStation(records, user, stationId);
     return records[0] ? this.toDetail(records[0]) : null;
   }
 
@@ -232,7 +232,7 @@ export class DutyRecordsService {
     this.autoLockExpired();
     const r = this.storage.getRecord(id);
     if (!r) throw new BusinessException(BusinessCode.RECORD_NOT_FOUND, '记录不存在');
-    if (user && user.role !== Role.ADMIN && user.stationId && r.stationId !== user.stationId) {
+    if (user && !this.scope.canAccessStation(user, r.stationId)) {
       throw new BusinessException(BusinessCode.FORBIDDEN, '无权查看其他站点记录');
     }
     return this.toDetail(r);
@@ -242,8 +242,12 @@ export class DutyRecordsService {
     this.autoLockExpired();
     const r = this.storage.getRecord(id);
     if (!r) throw new BusinessException(BusinessCode.RECORD_NOT_FOUND, '记录不存在');
+    // 区县管理员无值班记录编辑权限
+    if (user.role === Role.DISTRICT_ADMIN) {
+      throw new BusinessException(BusinessCode.FORBIDDEN, '区县管理员无值班记录编辑权限');
+    }
     // 站点归属校验：非管理员只能操作本所记录
-    if (user.role !== Role.ADMIN && r.stationId !== user.stationId) {
+    if (user.role !== Role.ADMIN && !this.scope.canAccessStation(user, r.stationId)) {
       throw new BusinessException(BusinessCode.FORBIDDEN, '无权操作其他站点的记录');
     }
     if (r.status === 'locked' && user.role !== Role.ADMIN) {
@@ -274,8 +278,12 @@ export class DutyRecordsService {
   async lock(id: number, user: UserPayload): Promise<DutyRecordDetail> {
     const r = this.storage.getRecord(id);
     if (!r) throw new BusinessException(BusinessCode.RECORD_NOT_FOUND, '记录不存在');
+    // 区县管理员无值班记录编辑权限
+    if (user.role === Role.DISTRICT_ADMIN) {
+      throw new BusinessException(BusinessCode.FORBIDDEN, '区县管理员无值班记录编辑权限');
+    }
     // 站点归属校验：非管理员只能锁定本所记录
-    if (user.role !== Role.ADMIN && r.stationId !== user.stationId) {
+    if (user.role !== Role.ADMIN && !this.scope.canAccessStation(user, r.stationId)) {
       throw new BusinessException(BusinessCode.FORBIDDEN, '无权操作其他站点的记录');
     }
     if (r.status === 'locked') {

@@ -3,4 +3,5 @@ export interface UserPayload {
   username: string;
   role: string;
   stationId: number | null;
+  districtId: number | null;
 }
