@@ -5,13 +5,18 @@ import { BusinessException, BusinessCode } from '../../common/exceptions/busines
 import { CreateUserDto, ListUsersQuery, UpdateUserDto } from './dto/users.dto';
 import { PaginatedResult } from '../../common/types/pagination';
 import { Role } from '../../common/types/role.enum';
+import { UserPayload } from '../../common/types/user-payload';
 
 @Injectable()
 export class UsersService {
   constructor(private readonly storage: StorageService) {}
 
-  async list(q: ListUsersQuery): Promise<PaginatedResult<UserPublic>> {
+  async list(q: ListUsersQuery, user?: UserPayload): Promise<PaginatedResult<UserPublic>> {
     let users = this.storage.getUsers();
+    // 所长只能看本所用户（忽略入参站点）
+    if (user && user.role === Role.SUPERVISOR && user.stationId) {
+      q.stationId = user.stationId;
+    }
     if (q.role) users = users.filter(u => u.role === q.role);
     if (q.stationId) users = users.filter(u => u.stationId === q.stationId);
     users.sort((a, b) => a.id - b.id);
@@ -24,10 +29,13 @@ export class UsersService {
     return { list, total, page, pageSize };
   }
 
-  async findOne(id: number): Promise<UserPublic> {
-    const user = this.storage.getUser(id);
-    if (!user) throw new BusinessException(BusinessCode.NOT_FOUND, '用户不存在');
-    return this.sanitize(user);
+  async findOne(id: number, user?: UserPayload): Promise<UserPublic> {
+    const target = this.storage.getUser(id);
+    if (!target) throw new BusinessException(BusinessCode.NOT_FOUND, '用户不存在');
+    if (user && user.role === Role.SUPERVISOR && target.stationId !== user.stationId) {
+      throw new BusinessException(BusinessCode.FORBIDDEN, '无权查看其他站点用户');
+    }
+    return this.sanitize(target);
   }
 
   /** 系统中超级管理员（admin 角色）的数量 */
@@ -35,9 +43,16 @@ export class UsersService {
     return this.storage.getUsers().filter(u => u.role === Role.ADMIN).length;
   }
 
-  async create(dto: CreateUserDto): Promise<UserPublic> {
+  async create(dto: CreateUserDto, actor?: UserPayload): Promise<UserPublic> {
     if (this.storage.getUserByUsername(dto.username)) {
       throw new BusinessException(BusinessCode.CONFLICT, '用户名已存在');
+    }
+    // 所长：只能建本所用户，不能创建超级管理员
+    if (actor && actor.role === Role.SUPERVISOR) {
+      if (dto.role === Role.ADMIN) {
+        throw new BusinessException(BusinessCode.FORBIDDEN, '无权创建超级管理员');
+      }
+      dto.stationId = actor.stationId ?? undefined;
     }
     if (dto.role === Role.ADMIN && this.adminCount() > 0) {
       throw new BusinessException(BusinessCode.CONFLICT, '系统已存在超级管理员，最多只能有一个');
@@ -60,9 +75,22 @@ export class UsersService {
     return this.sanitize(user);
   }
 
-  async update(id: number, dto: UpdateUserDto): Promise<UserPublic> {
+  async update(id: number, dto: UpdateUserDto, actor?: UserPayload): Promise<UserPublic> {
     const user = this.storage.getUser(id);
     if (!user) throw new BusinessException(BusinessCode.NOT_FOUND, '用户不存在');
+
+    // 所长：只能改本所非管理员用户，不能改到其他站点，不能提升为管理员
+    if (actor && actor.role === Role.SUPERVISOR) {
+      if (user.stationId !== actor.stationId) {
+        throw new BusinessException(BusinessCode.FORBIDDEN, '无权操作其他站点用户');
+      }
+      if (dto.role === Role.ADMIN) {
+        throw new BusinessException(BusinessCode.FORBIDDEN, '无权创建超级管理员');
+      }
+      if (dto.stationId !== undefined && dto.stationId !== actor.stationId) {
+        throw new BusinessException(BusinessCode.FORBIDDEN, '不能将用户调整到其他站点');
+      }
+    }
 
     const adminTotal = this.adminCount();
     const isOnlyAdmin = user.role === Role.ADMIN && adminTotal === 1;
@@ -99,9 +127,18 @@ export class UsersService {
     return { ok: true };
   }
 
-  async resetPassword(id: number, newPassword: string) {
+  async resetPassword(id: number, newPassword: string, actor?: UserPayload) {
     const user = this.storage.getUser(id);
     if (!user) throw new BusinessException(BusinessCode.NOT_FOUND, '用户不存在');
+    // 所长：只能重置本所非管理员用户
+    if (actor && actor.role === Role.SUPERVISOR) {
+      if (user.stationId !== actor.stationId) {
+        throw new BusinessException(BusinessCode.FORBIDDEN, '无权操作其他站点用户');
+      }
+      if (user.role === Role.ADMIN) {
+        throw new BusinessException(BusinessCode.FORBIDDEN, '无权重置超级管理员密码');
+      }
+    }
     user.passwordHash = await this.storage.hashPassword(newPassword);
     user.updatedAt = this.storage.now();
     this.storage.saveUser(user);

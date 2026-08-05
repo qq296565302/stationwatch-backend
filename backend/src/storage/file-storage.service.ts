@@ -111,6 +111,7 @@ export class FileStorageService implements OnModuleInit, OnModuleDestroy {
     this.initialized = true;
     const existed = await this.fileExists();
     await this.load();
+    this.migrateLegacySchedule();
     // 加载后判断是否需要 seed：首次启动 OR 版本不匹配被备份后 OR 文件被损坏
     const needsSeed = !existed || this.stations.size === 0;
     if (needsSeed) {
@@ -119,6 +120,23 @@ export class FileStorageService implements OnModuleInit, OnModuleDestroy {
     }
     this.logger.log(`[FileStorage] 文件路径: ${this.filePath}，刷新间隔: ${this.flushIntervalMs}ms`);
     this.markDirty(); // 启动即触发一次落盘，确保新 seed 数据写入
+  }
+
+  /**
+   * 排班配置迁移：旧版全局 key `duty.schedule` → 按站点 key `duty.schedule.1`
+   * 幂等：已有新 key 或不存在旧 key 时跳过
+   */
+  private migrateLegacySchedule() {
+    const legacy = this.getSystemConfig('duty.schedule');
+    if (legacy && !this.getSystemConfig('duty.schedule.1')) {
+      this.saveSystemConfig({
+        ...legacy,
+        configKey: 'duty.schedule.1',
+        description: '值班排班配置（站点1）',
+        updatedAt: this.now(),
+      });
+      this.logger.log('[FileStorage] 已迁移排班配置 duty.schedule → duty.schedule.1');
+    }
   }
 
   async onModuleDestroy() {

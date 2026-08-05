@@ -136,4 +136,8 @@ export class FindByDateDto {
   @ApiProperty({ example: '2026-07-31', description: '业务日期 YYYY-MM-DD' })
   @IsDateString()
   date: string;
+
+  @ApiProperty({ example: 1, required: false, description: '站点 ID（admin 可用，缺省用当前用户站点）' })
+  @IsOptional() @Type(() => Number) @IsInt()
+  stationId?: number;
 }

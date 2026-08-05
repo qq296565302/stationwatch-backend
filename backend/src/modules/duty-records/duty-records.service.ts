@@ -68,6 +68,10 @@ export class DutyRecordsService {
     // 验证站点存在
     const station = this.storage.getStation(dto.stationId);
     if (!station) throw new BusinessException(BusinessCode.NOT_FOUND, '站点不存在');
+    // 站点归属校验：非管理员只能写自己站点
+    if (user.role !== Role.ADMIN && dto.stationId !== user.stationId) {
+      throw new BusinessException(BusinessCode.FORBIDDEN, '无权操作其他站点的记录');
+    }
 
     const now = this.storage.now();
 
@@ -174,8 +178,8 @@ export class DutyRecordsService {
     this.autoLockExpired();
     let records = this.storage.getRecords();
 
-    // 权限过滤：duty_officer 只能看本所
-    if (user.role === Role.DUTY_OFFICER && user.stationId) {
+    // 权限过滤：duty_officer/supervisor 只能看本所，admin 看全部（可再用 q.stationId 过滤）
+    if (user.role !== Role.ADMIN && user.stationId) {
       records = records.filter(r => r.stationId === user.stationId);
     }
 
@@ -201,22 +205,25 @@ export class DutyRecordsService {
     return { list, total, page, pageSize };
   }
 
-  async today(user: UserPayload): Promise<DutyRecordDetail | null> {
+  async today(user: UserPayload, stationId?: number): Promise<DutyRecordDetail | null> {
     this.autoLockExpired();
     const today = dayjs().format('YYYY-MM-DD');
-    const stationId = user.stationId;
-    if (!stationId) return null;
+    // admin 切站时用传入 stationId，其余角色固定本所
+    const sid = user.role === Role.ADMIN ? (stationId ?? user.stationId) : user.stationId;
+    if (!sid) return null;
     const record = this.storage.getRecords().find(
-      r => r.stationId === stationId && r.recordDate === today,
+      r => r.stationId === sid && r.recordDate === today,
     );
     return record ? this.toDetail(record) : null;
   }
 
-  async findByDate(dto: FindByDateDto, user: UserPayload): Promise<DutyRecordDetail | null> {
+  async findByDate(dto: FindByDateDto, user: UserPayload, stationId?: number): Promise<DutyRecordDetail | null> {
     this.autoLockExpired();
     let records = this.storage.getRecords().filter(r => r.recordDate === dto.date);
-    if (user.role === Role.DUTY_OFFICER && user.stationId) {
+    if (user.role !== Role.ADMIN && user.stationId) {
       records = records.filter(r => r.stationId === user.stationId);
+    } else if (stationId) {
+      records = records.filter(r => r.stationId === stationId);
     }
     return records[0] ? this.toDetail(records[0]) : null;
   }
@@ -225,7 +232,7 @@ export class DutyRecordsService {
     this.autoLockExpired();
     const r = this.storage.getRecord(id);
     if (!r) throw new BusinessException(BusinessCode.RECORD_NOT_FOUND, '记录不存在');
-    if (user && user.role === Role.DUTY_OFFICER && user.stationId && r.stationId !== user.stationId) {
+    if (user && user.role !== Role.ADMIN && user.stationId && r.stationId !== user.stationId) {
       throw new BusinessException(BusinessCode.FORBIDDEN, '无权查看其他站点记录');
     }
     return this.toDetail(r);
@@ -235,6 +242,10 @@ export class DutyRecordsService {
     this.autoLockExpired();
     const r = this.storage.getRecord(id);
     if (!r) throw new BusinessException(BusinessCode.RECORD_NOT_FOUND, '记录不存在');
+    // 站点归属校验：非管理员只能操作本所记录
+    if (user.role !== Role.ADMIN && r.stationId !== user.stationId) {
+      throw new BusinessException(BusinessCode.FORBIDDEN, '无权操作其他站点的记录');
+    }
     if (r.status === 'locked' && user.role !== Role.ADMIN) {
       throw new BusinessException(BusinessCode.RECORD_LOCKED, '记录已锁定');
     }
@@ -263,6 +274,10 @@ export class DutyRecordsService {
   async lock(id: number, user: UserPayload): Promise<DutyRecordDetail> {
     const r = this.storage.getRecord(id);
     if (!r) throw new BusinessException(BusinessCode.RECORD_NOT_FOUND, '记录不存在');
+    // 站点归属校验：非管理员只能锁定本所记录
+    if (user.role !== Role.ADMIN && r.stationId !== user.stationId) {
+      throw new BusinessException(BusinessCode.FORBIDDEN, '无权操作其他站点的记录');
+    }
     if (r.status === 'locked') {
       throw new BusinessException(BusinessCode.RECORD_LOCKED, '记录已经是锁定状态');
     }
@@ -290,8 +305,8 @@ export class DutyRecordsService {
     const items = this.storage.getItemsByRecord(r.id);
     const station = this.storage.getStation(r.stationId);
     const creator = this.storage.getUser(r.creatorId);
-    // 值班员 = 当天排班名单（按 recordDate 从值班表取，未配置排班时为空）
-    const dutyOfficers = this.schedule.getDutyOfficersOn(r.recordDate).map(o => o.realName);
+    // 值班员 = 当天该站点排班名单（按 recordDate + stationId 从值班表取，未配置排班时为空）
+    const dutyOfficers = this.schedule.getDutyOfficersOn(r.recordDate, r.stationId).map(o => o.realName);
     return {
       ...r,
       items,

@@ -29,6 +29,10 @@ export class ScheduleGroupDto {
 }
 
 export class UpdateScheduleDto {
+  @ApiProperty({ example: 1, description: '站点 ID' })
+  @IsInt()
+  stationId: number;
+
   @ApiProperty({ example: '2026-08-03' })
   @IsString() @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'startDate 须为 YYYY-MM-DD' })
   startDate: string;
@@ -45,6 +49,10 @@ export class UpdateScheduleDto {
 }
 
 export class ScheduleTableQuery {
+  @ApiProperty({ required: false, example: 1, description: '站点 ID（缺省用当前用户站点）' })
+  @IsOptional() @Type(() => Number) @IsInt()
+  stationId?: number;
+
   @ApiProperty({ required: false, example: '2026-08-03' })
   @IsOptional() @IsString() @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'from 须为 YYYY-MM-DD' })
   from?: string;

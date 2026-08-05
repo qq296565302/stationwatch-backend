@@ -22,7 +22,8 @@ export class SearchService {
     const pattern = q.trim().toLowerCase();
 
     let records = this.storage.getRecords();
-    if (user.role === Role.DUTY_OFFICER && user.stationId) {
+    // duty_officer/supervisor 只能搜索本所
+    if (user.role !== Role.ADMIN && user.stationId) {
       records = records.filter(r => r.stationId === user.stationId);
     }
 

@@ -182,7 +182,7 @@ export function seedInitialData(storage: StorageService) {
       updatedAt: now,
     },
     {
-      configKey: 'duty.schedule',
+      configKey: 'duty.schedule.1',
       configValue: JSON.stringify({
         startDate: '2026-08-03',
         cycleDays: 5,
@@ -194,7 +194,7 @@ export function seedInitialData(storage: StorageService) {
           { name: '第五组', sortOrder: 5, memberIds: [10, 11, 12] },
         ],
       }),
-      description: '值班排班配置（固定轮询 5 组）',
+      description: '值班排班配置（站点1，固定轮询 5 组）',
       updatedBy: 1,
       updatedAt: now,
     },

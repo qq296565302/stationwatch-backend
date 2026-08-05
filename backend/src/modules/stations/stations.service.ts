@@ -2,7 +2,9 @@ import { Injectable } from '@nestjs/common';
 import { StorageService } from '../../storage/storage.service';
 import { Station } from '../../storage/types';
 import { BusinessException, BusinessCode } from '../../common/exceptions/business.exception';
-import { UpdateStationDto } from './dto/stations.dto';
+import { Role } from '../../common/types/role.enum';
+import { UserPayload } from '../../common/types/user-payload';
+import { CreateStationDto, UpdateStationDto } from './dto/stations.dto';
 
 @Injectable()
 export class StationsService {
@@ -18,7 +20,29 @@ export class StationsService {
     return s;
   }
 
-  update(id: number, dto: UpdateStationDto): Station {
+  create(dto: CreateStationDto): Station {
+    const now = this.storage.now();
+    const station: Station = {
+      id: this.storage.nextIdOf('station'),
+      name: dto.name,
+      code: dto.code,
+      region: dto.region,
+      voltage: dto.voltage,
+      feeders: dto.feeders ?? 0,
+      transformers: dto.transformers ?? 0,
+      maxDutyItemsPerRecord: dto.maxDutyItemsPerRecord ?? 11,
+      isActive: dto.isActive ?? true,
+      createdAt: now,
+      updatedAt: now,
+    };
+    return this.storage.saveStation(station);
+  }
+
+  update(id: number, dto: UpdateStationDto, user: UserPayload): Station {
+    // 所长只能编辑本所站点
+    if (user.role === Role.SUPERVISOR && id !== user.stationId) {
+      throw new BusinessException(BusinessCode.FORBIDDEN, '无权编辑其他站点信息');
+    }
     const s = this.storage.getStation(id);
     if (!s) throw new BusinessException(BusinessCode.NOT_FOUND, '站点不存在');
     if (dto.name !== undefined) s.name = dto.name;

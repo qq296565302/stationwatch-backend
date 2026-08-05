@@ -106,6 +106,7 @@ export class MongoStorageService implements OnModuleInit, OnModuleDestroy {
     this.initialized = true;
     try {
       await this.connectAndLoad();
+      this.migrateLegacySchedule();
       // 首次启动或库为空时写入种子数据
       if (this.stations.size === 0) {
         this.logger.log('[MongoStorage] 库中无数据，写入种子数据...');
@@ -119,6 +120,23 @@ export class MongoStorageService implements OnModuleInit, OnModuleDestroy {
     } catch (e: any) {
       this.logger.error(`[MongoStorage] 初始化失败: ${e.message}`);
       throw e; // fail-fast：连接失败则拒绝启动，避免静默降级丢数据
+    }
+  }
+
+  /**
+   * 排班配置迁移：旧版全局 key `duty.schedule` → 按站点 key `duty.schedule.1`
+   * 幂等：已有新 key 或不存在旧 key 时跳过
+   */
+  private migrateLegacySchedule() {
+    const legacy = this.getSystemConfig('duty.schedule');
+    if (legacy && !this.getSystemConfig('duty.schedule.1')) {
+      this.saveSystemConfig({
+        ...legacy,
+        configKey: 'duty.schedule.1',
+        description: '值班排班配置（站点1）',
+        updatedAt: this.now(),
+      });
+      this.logger.log('[MongoStorage] 已迁移排班配置 duty.schedule → duty.schedule.1');
     }
   }
 

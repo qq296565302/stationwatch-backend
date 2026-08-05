@@ -11,14 +11,10 @@ export class DashboardService {
   /**
    * 顶部统计
    */
-  stats(date: string | undefined, user: UserPayload) {
+  stats(date: string | undefined, user: UserPayload, stationId?: number) {
     const target = date || dayjs().format('YYYY-MM-DD');
-    const stationId = user.stationId;
 
-    let records = this.storage.getRecords();
-    if (user.role === Role.DUTY_OFFICER && stationId) {
-      records = records.filter(r => r.stationId === stationId);
-    }
+    const records = this.scopeRecords(user, stationId);
 
     // 当天记录
     const todayRecord = records.find(r => r.recordDate === target) || null;
@@ -61,11 +57,8 @@ export class DashboardService {
   }
 
   /** 最近活动（按记录最近更新时间倒序，字段结构与前端卡片对齐） */
-  activities(limit: number, user: UserPayload) {
-    let records = this.storage.getRecords();
-    if (user.role === Role.DUTY_OFFICER && user.stationId) {
-      records = records.filter(r => r.stationId === user.stationId);
-    }
+  activities(limit: number, user: UserPayload, stationId?: number) {
+    const records = this.scopeRecords(user, stationId);
     records.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 
     return records.slice(0, limit).map(r => {
@@ -101,11 +94,8 @@ export class DashboardService {
   }
 
   /** 告警 */
-  alerts(user: UserPayload) {
-    let records = this.storage.getRecords();
-    if (user.role === Role.DUTY_OFFICER && user.stationId) {
-      records = records.filter(r => r.stationId === user.stationId);
-    }
+  alerts(user: UserPayload, stationId?: number) {
+    const records = this.scopeRecords(user, stationId);
 
     const alerts: any[] = [];
     // 1. 有遗留问题
@@ -149,11 +139,8 @@ export class DashboardService {
   }
 
   /** 月度统计 */
-  monthlyStats(year: number, month: number, user: UserPayload) {
-    let records = this.storage.getRecords();
-    if (user.role === Role.DUTY_OFFICER && user.stationId) {
-      records = records.filter(r => r.stationId === user.stationId);
-    }
+  monthlyStats(year: number, month: number, user: UserPayload, stationId?: number) {
+    const records = this.scopeRecords(user, stationId);
     const monthStart = dayjs(`${year}-${String(month).padStart(2, '0')}-01`).startOf('month').format('YYYY-MM-DD');
     const monthEnd = dayjs(monthStart).endOf('month').format('YYYY-MM-DD');
     const monthRecords = records.filter(
@@ -189,9 +176,11 @@ export class DashboardService {
   }
 
   /** 设备状态（从 station 聚合） */
-  equipmentStatus(user: UserPayload) {
+  equipmentStatus(user: UserPayload, stationId?: number) {
     let stations = this.storage.getStations().filter(s => s.isActive);
-    if (user.role === Role.DUTY_OFFICER && user.stationId) {
+    if (user.role === Role.ADMIN) {
+      if (stationId) stations = stations.filter(s => s.id === stationId);
+    } else if (user.stationId) {
       stations = stations.filter(s => s.id === user.stationId);
     }
     return stations.map(s => ({
@@ -201,5 +190,16 @@ export class DashboardService {
       feeders: s.feeders,
       transformers: s.transformers,
     }));
+  }
+
+  /** 统一记录范围：admin 按传入 stationId（缺省全站），其余角色强制本所 */
+  private scopeRecords(user: UserPayload, stationId?: number) {
+    let records = this.storage.getRecords();
+    if (user.role === Role.ADMIN) {
+      if (stationId) records = records.filter(r => r.stationId === stationId);
+    } else if (user.stationId) {
+      records = records.filter(r => r.stationId === user.stationId);
+    }
+    return records;
   }
 }

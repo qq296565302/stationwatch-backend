@@ -20,8 +20,8 @@ export class SystemController {
   }
 
   @Put('config')
-  @Roles(Role.ADMIN)
-  @ApiOperation({ summary: '更新配置（仅管理员）' })
+  @Roles(Role.ADMIN, Role.SUPERVISOR)
+  @ApiOperation({ summary: '更新配置（管理员任意，所长仅限值班规则白名单）' })
   @ApiResponse({ status: 200, description: '成功' })
   @ApiResponse({ status: 10003, description: '权限不足' })
   update(@Body() dto: UpdateSystemConfigDto, @CurrentUser() user: UserPayload) {

@@ -15,7 +15,7 @@ export class DutyItemsService {
   list(recordId: number, user?: UserPayload): DutyItem[] {
     const r = this.storage.getRecord(recordId);
     if (!r) throw new BusinessException(BusinessCode.RECORD_NOT_FOUND, '记录不存在');
-    if (user && user.role === Role.DUTY_OFFICER && user.stationId && r.stationId !== user.stationId) {
+    if (user && user.role !== Role.ADMIN && user.stationId && r.stationId !== user.stationId) {
       throw new BusinessException(BusinessCode.FORBIDDEN, '无权访问');
     }
     return this.storage.getItemsByRecord(recordId);
@@ -27,6 +27,7 @@ export class DutyItemsService {
     if (record.status === 'locked' && user.role !== Role.ADMIN) {
       throw new BusinessException(BusinessCode.RECORD_LOCKED, '记录已锁定');
     }
+    this.assertStationScope(record, user);
     this.assertCanEdit(record, user);
 
     const station = this.storage.getStation(record.stationId);
@@ -68,6 +69,7 @@ export class DutyItemsService {
     if (record.status === 'locked' && user.role !== Role.ADMIN) {
       throw new BusinessException(BusinessCode.RECORD_LOCKED, '记录已锁定');
     }
+    this.assertStationScope(record, user);
     this.assertCanEdit(record, user);
     const item = this.storage.getItem(itemId);
     if (!item || item.recordId !== recordId) {
@@ -96,6 +98,7 @@ export class DutyItemsService {
     if (record.status === 'locked' && user.role !== Role.ADMIN) {
       throw new BusinessException(BusinessCode.RECORD_LOCKED, '记录已锁定');
     }
+    this.assertStationScope(record, user);
     this.assertCanEdit(record, user);
     const item = this.storage.getItem(itemId);
     if (!item || item.recordId !== recordId) {
@@ -112,6 +115,7 @@ export class DutyItemsService {
     if (record.status === 'locked' && user.role !== Role.ADMIN) {
       throw new BusinessException(BusinessCode.RECORD_LOCKED, '记录已锁定');
     }
+    this.assertStationScope(record, user);
     this.assertCanEdit(record, user);
     const item = this.storage.getItem(itemId);
     if (!item || item.recordId !== recordId) {
@@ -131,6 +135,7 @@ export class DutyItemsService {
     if (record.status === 'locked' && user.role !== Role.ADMIN) {
       throw new BusinessException(BusinessCode.RECORD_LOCKED, '记录已锁定');
     }
+    this.assertStationScope(record, user);
     this.assertCanEdit(record, user);
     const item = this.storage.getItem(itemId);
     if (!item || item.recordId !== recordId) {
@@ -144,6 +149,13 @@ export class DutyItemsService {
   }
 
   // ====== 内部 ======
+  // 站点归属校验：非管理员只能操作本所记录的工单
+  private assertStationScope(record: any, user: UserPayload) {
+    if (user.role !== Role.ADMIN && record.stationId !== user.stationId) {
+      throw new BusinessException(BusinessCode.FORBIDDEN, '无权操作其他站点记录的工单');
+    }
+  }
+
   // 值班员只能操作自己创建的记录中的工单（与 duty-records 的"只能编辑自己创建"口径一致）
   private assertCanEdit(record: any, user: UserPayload) {
     if (user.role === Role.DUTY_OFFICER && record.creatorId !== user.id) {

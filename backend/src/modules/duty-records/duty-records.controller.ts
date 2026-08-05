@@ -27,18 +27,20 @@ export class DutyRecordsController {
   }
 
   @Get('today')
-  @ApiOperation({ summary: '查询当天的值班记录（按当前用户站点）' })
+  @ApiOperation({ summary: '查询当天的值班记录（按当前用户站点，admin 可传 stationId 切站）' })
+  @ApiQuery({ name: 'stationId', required: false, example: 1 })
   @ApiResponse({ status: 200, description: '成功', type: DutyRecordDto })
-  today(@CurrentUser() user: UserPayload) {
-    return this.service.today(user);
+  today(@Query('stationId') stationId: string | undefined, @CurrentUser() user: UserPayload) {
+    return this.service.today(user, stationId ? Number(stationId) : undefined);
   }
 
   @Get('find-by-date')
-  @ApiOperation({ summary: '按业务日期查找记录' })
+  @ApiOperation({ summary: '按业务日期查找记录（按当前用户站点，admin 可传 stationId）' })
   @ApiQuery({ name: 'date', example: '2026-07-31' })
+  @ApiQuery({ name: 'stationId', required: false, example: 1 })
   @ApiResponse({ status: 200, description: '成功', type: DutyRecordDto })
   findByDate(@Query() dto: FindByDateDto, @CurrentUser() user: UserPayload) {
-    return this.service.findByDate(dto, user);
+    return this.service.findByDate(dto, user, dto.stationId);
   }
 
   @Get(':id')

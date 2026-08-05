@@ -9,8 +9,9 @@ import { UpdateScheduleDto } from './dto/schedule.dto';
  * 值班排班：固定轮询（每组一天，周期循环）
  * 配置存 system_configs（configKey=duty.schedule，JSON 字符串），复用现有持久化
  */
-const SCHEDULE_KEY = 'duty.schedule';
 const DEFAULT_CYCLE_DAYS = 5;
+/** 排班配置按站点隔离：configKey = duty.schedule.{stationId} */
+const scheduleKey = (stationId: number) => `duty.schedule.${stationId}`;
 const MS_DAY = 86400000;
 const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 
@@ -45,8 +46,8 @@ export class ScheduleService {
   constructor(private readonly storage: StorageService) {}
 
   /** 排班配置视图（memberIds -> members 实时解析，忽略已删除/非值班员） */
-  getConfig() {
-    const raw = this.storage.getSystemConfig(SCHEDULE_KEY);
+  getConfig(stationId: number) {
+    const raw = this.storage.getSystemConfig(scheduleKey(stationId));
     const base = { configured: false, startDate: null, cycleDays: DEFAULT_CYCLE_DAYS, groups: [], updatedAt: null };
     if (!raw) return base;
     let cfg: ScheduleConfig;
@@ -74,10 +75,14 @@ export class ScheduleService {
     };
   }
 
-  /** 保存排班配置（仅 admin，controller 把关） */
+  /** 保存排班配置（admin 可写任意站点，supervisor 只能写本所，controller 把关角色） */
   updateConfig(dto: UpdateScheduleDto, user: UserPayload) {
     if (dto.groups.length !== dto.cycleDays) {
       throw new BusinessException(BusinessCode.PARAM_INVALID, '轮换周期必须与班组数量一致');
+    }
+    // 非管理员只能维护本所排班
+    if (user.role !== Role.ADMIN && dto.stationId !== user.stationId) {
+      throw new BusinessException(BusinessCode.FORBIDDEN, '无权操作其他站点的排班');
     }
     const seen = new Set<number>();
     for (const g of dto.groups) {
@@ -87,6 +92,10 @@ export class ScheduleService {
         if (u.role !== Role.DUTY_OFFICER && u.role !== Role.SUPERVISOR) {
           throw new BusinessException(BusinessCode.PARAM_INVALID, `${u.realName} 既不是值班员也不是所长`);
         }
+        // 排班成员必须属于该站点，防止跨站引用
+        if (u.stationId !== dto.stationId) {
+          throw new BusinessException(BusinessCode.PARAM_INVALID, `${u.realName} 不属于该站点`);
+        }
         if (seen.has(id)) {
           throw new BusinessException(BusinessCode.PARAM_INVALID, `${u.realName} 被分配到多个组`);
         }
@@ -94,18 +103,18 @@ export class ScheduleService {
       }
     }
     this.storage.saveSystemConfig({
-      configKey: SCHEDULE_KEY,
+      configKey: scheduleKey(dto.stationId),
       configValue: JSON.stringify({ startDate: dto.startDate, cycleDays: dto.cycleDays, groups: dto.groups }),
-      description: '值班排班配置',
+      description: `值班排班配置（站点${dto.stationId}）`,
       updatedBy: user.id,
       updatedAt: this.storage.now(),
     });
-    return this.getConfig();
+    return this.getConfig(dto.stationId);
   }
 
-  /** 生成排班表：from（默认今天）起 days 天，按周期循环 */
-  getTable(from?: string, days?: number) {
-    const cfg = this.getConfig();
+  /** 生成排班表：from（默认今天）起 days 天，按周期循环（按站点） */
+  getTable(from?: string, days?: number, stationId?: number) {
+    const cfg = this.getConfig(stationId ?? 0);
     if (!cfg.configured || cfg.groups.length === 0) return [];
     const startUTC = parseUTC(cfg.startDate as string);
     const fromUTC = parseUTC(from || todayLocal());
@@ -134,9 +143,9 @@ export class ScheduleService {
     return rows;
   }
 
-  /** 获取指定日期的值班人员名单（按排班周期计算），未配置排班时返回空数组 */
-  getDutyOfficersOn(date?: string): Array<{ id: number; realName: string; username: string }> {
-    const row = this.getTable(date || todayLocal(), 1);
+  /** 获取指定日期指定站点的值班人员名单（按排班周期计算），未配置排班时返回空数组 */
+  getDutyOfficersOn(date?: string, stationId?: number): Array<{ id: number; realName: string; username: string }> {
+    const row = this.getTable(date || todayLocal(), 1, stationId);
     return row.length ? row[0].members : [];
   }
 }
