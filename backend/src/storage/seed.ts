@@ -6,16 +6,16 @@ import { Station, User, DictionaryItem, SystemConfig, District } from './types';
  * 必须与前端 LoginView 演示账号保持一致
  */
 
-/** 淄博「五区三县」8 个区县供电中心 */
+/** 淄博「五区三县」8 个区县供电中心（与现网命名一致：区→供电中心，县→县供电公司） */
 export const DISTRICTS: Array<{ id: number; name: string; code: string }> = [
-  { id: 1, name: '张店', code: 'ZD' },
-  { id: 2, name: '临淄', code: 'LZ' },
-  { id: 3, name: '淄川', code: 'ZC' },
-  { id: 4, name: '博山', code: 'BS' },
-  { id: 5, name: '周村', code: 'ZCN' },
-  { id: 6, name: '桓台', code: 'HT' },
-  { id: 7, name: '高青', code: 'GQ' },
-  { id: 8, name: '沂源', code: 'YY' },
+  { id: 1, name: '张店供电中心', code: 'ZD' },
+  { id: 2, name: '临淄供电中心', code: 'LZ' },
+  { id: 3, name: '淄川供电中心', code: 'ZC' },
+  { id: 4, name: '博山供电中心', code: 'BS' },
+  { id: 5, name: '周村供电中心', code: 'ZCN' },
+  { id: 6, name: '桓台县供电公司', code: 'HT' },
+  { id: 7, name: '高青县供电公司', code: 'GQ' },
+  { id: 8, name: '沂源县供电公司', code: 'YY' },
 ];
 
 /**
@@ -40,8 +40,8 @@ export function seedDistricts(storage: StorageService) {
 }
 
 /**
- * 补齐演示账号（幂等）：张店区管理员 zd_admin + 东郊所长 dongjiao_s
- * 供 file/mongo 旧数据增量迁移时调用（旧种子数据中没有这两个账号）
+ * 补齐演示账号（幂等）：张店区管理员 zd_admin
+ * 供 file/mongo/mysql 旧数据增量迁移时调用（旧种子数据中没有该账号）
  * 返回是否创建了新账号
  */
 export function ensureDemoUsers(storage: StorageService): boolean {
@@ -67,27 +67,6 @@ export function ensureDemoUsers(storage: StorageService): boolean {
     created = true;
   }
 
-  if (!storage.getUserByUsername('dongjiao_s')) {
-    // 绑定到第一个张店区站点（缺省东郊 id=1）
-    const zhangdianStation =
-      storage.getStations().find((s) => s.districtId === 1) ?? storage.getStation(1) ?? null;
-    storage.saveUser({
-      id: storage.nextIdOf('user'),
-      username: 'dongjiao_s',
-      passwordHash: bcrypt.hashSync('@zbdl-95598', 10),
-      realName: '东郊所长',
-      role: 'supervisor',
-      stationId: zhangdianStation?.id ?? null,
-      districtId: 1,
-      isActive: true,
-      lastLoginAt: null,
-      lastLoginIp: null,
-      createdAt: now,
-      updatedAt: now,
-    });
-    created = true;
-  }
-
   return created;
 }
 
@@ -97,14 +76,14 @@ export function seedInitialData(storage: StorageService) {
   // === 区县（淄博五区三县 8 个） ===
   seedDistricts(storage);
 
-  // === 站点（仅 1 个：东郊供电所，归属张店区 districtId=1） ===
+  // === 站点（仅 1 个：马尚供电所，归属张店区 districtId=1） ===
   const stations: Station[] = [
     {
       id: 1,
-      name: '东郊供电所',
-      code: 'EAST',
+      name: '马尚供电所',
+      code: 'MAS',
       districtId: 1, // 张店
-      region: '东郊',
+      region: '马尚',
       voltage: '10kV',
       feeders: 8,
       transformers: 24,
@@ -141,20 +120,6 @@ export function seedInitialData(storage: StorageService) {
       realName: '张店区管理员',
       role: 'district_admin', // 区县管理员（张店区）
       stationId: null,
-      districtId: 1,
-      isActive: true,
-      lastLoginAt: null,
-      lastLoginIp: null,
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      id: 3,
-      username: 'dongjiao_s',
-      passwordHash: bcrypt.hashSync('@zbdl-95598', 10),
-      realName: '东郊所长',
-      role: 'supervisor', // 所长（东郊供电所）
-      stationId: 1,
       districtId: 1,
       isActive: true,
       lastLoginAt: null,
@@ -321,11 +286,10 @@ export function seedInitialData(storage: StorageService) {
 
   console.log('[Seed] 初始数据已加载（spec v3，三级组织）');
   console.log('  - 区县: 8 个（淄博五区三县）');
-  console.log('  - 站点: 1 个 (东郊供电所，张店区)');
-  console.log('  - 用户: 18 个');
+  console.log('  - 站点: 1 个 (马尚供电所，张店区)');
+  console.log('  - 用户: 17 个');
   console.log('    admin / admin123      → 市级超级管理员 (管理员)');
   console.log('    zd_admin / zd123456   → 张店区管理员 (区县管理员)');
-  console.log('    dongjiao_s / @zbdl-95598 → 东郊所长 (所长)');
   console.log('    15 名值班员统一密码 @zbdl-95598（lidong/wangyong/... 等拼音账号）');
   console.log('  - 字典: 业务类型 6 / 受理内容 6 / 处理结果 7');
   console.log('  - 值班员: 来自 users 表按 stationId 过滤');

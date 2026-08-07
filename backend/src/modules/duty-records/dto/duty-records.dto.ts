@@ -57,8 +57,8 @@ export class UpsertDutyRecordDto {
   @IsInt()
   stationId: number;
 
-  @ApiProperty({ example: 'sunny', enum: ['sunny', 'cloudy', 'rainy', 'stormy', 'snowy', 'foggy'] })
-  @IsString() @IsIn(['sunny', 'cloudy', 'rainy', 'stormy', 'snowy', 'foggy'])
+  @ApiProperty({ example: 'sunny', enum: ['sunny', 'cloudy', 'rainy', 'windy', 'snowy', 'foggy'] })
+  @IsString() @IsIn(['sunny', 'cloudy', 'rainy', 'windy', 'snowy', 'foggy'])
   weather: string;
 
   @ApiProperty({ example: '晴天', description: '天气显示名' })
@@ -81,8 +81,8 @@ export class UpsertDutyRecordDto {
 }
 
 export class UpdateDutyRecordDto {
-  @ApiProperty({ example: 'cloudy', required: false, enum: ['sunny', 'cloudy', 'rainy', 'stormy', 'snowy', 'foggy'] })
-  @IsOptional() @IsString() @IsIn(['sunny', 'cloudy', 'rainy', 'stormy', 'snowy', 'foggy'])
+  @ApiProperty({ example: 'cloudy', required: false, enum: ['sunny', 'cloudy', 'rainy', 'windy', 'snowy', 'foggy'] })
+  @IsOptional() @IsString() @IsIn(['sunny', 'cloudy', 'rainy', 'windy', 'snowy', 'foggy'])
   weather?: string;
 
   @ApiProperty({ example: '多云', required: false })

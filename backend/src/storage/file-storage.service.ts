@@ -178,13 +178,21 @@ export class FileStorageService implements OnModuleInit, OnModuleDestroy {
       }
     });
     this.users.forEach((u) => {
-      if (typeof u.districtId !== 'number') {
-        if (u.role === Role.ADMIN) {
-          u.districtId = null; // 市级超管无区县归属
-        } else {
-          const st = u.stationId != null ? this.stations.get(u.stationId) : undefined;
-          u.districtId = st?.districtId ?? null;
+      // admin 期望 districtId=null（市级）；其余角色期望按所属站点派生，不一致才回填（幂等）
+      if (u.role === Role.ADMIN) {
+        if (u.districtId !== null) {
+          u.districtId = null;
+          changed = true;
         }
+        return;
+      }
+      // 区县管理员：districtId 即其管理的区县，stationId 恒为 null，不可按站点派生
+      if (u.role === Role.DISTRICT_ADMIN) {
+        return;
+      }
+      const derived = u.stationId != null ? (this.stations.get(u.stationId)?.districtId ?? null) : null;
+      if (u.districtId !== derived) {
+        u.districtId = derived;
         changed = true;
       }
     });

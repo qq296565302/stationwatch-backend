@@ -24,7 +24,9 @@ import { ScheduleModule } from './modules/schedule/schedule.module';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: ['.env.local', '.env'],
+      // 按 NODE_ENV 加载环境文件（数组后者优先）：
+      // 开发/默认读 .env；NODE_ENV=production 时读 .env.production 覆盖
+      envFilePath: ['.env.local', '.env', `.env.${process.env.NODE_ENV || 'development'}`],
     }),
     NestScheduleModule.forRoot(),
     StorageModule,

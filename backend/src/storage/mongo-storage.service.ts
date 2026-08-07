@@ -1,6 +1,10 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { MongoClient, Db } from 'mongodb';
+// mongodb 驱动改为运行时按需加载（仅 mongo 存储模式实例化时才 require），
+// 生产环境（mysql）无需安装该依赖，便于离线打包。
+// 类型以 any 兜底（mongodb 未安装时无类型声明）
+type MongoClientType = any;
+type DbType = any;
 import * as bcrypt from 'bcryptjs';
 import {
   District,
@@ -83,8 +87,8 @@ export class MongoStorageService implements OnModuleInit, OnModuleDestroy {
 
   // MongoDB 专属
   private uri: string;
-  private client: MongoClient | null = null;
-  private db: Db | null = null;
+  private client: MongoClientType | null = null;
+  private db: DbType | null = null;
 
   // 落库控制
   private flushIntervalMs: number;
@@ -183,13 +187,21 @@ export class MongoStorageService implements OnModuleInit, OnModuleDestroy {
       }
     });
     this.users.forEach((u) => {
-      if (typeof u.districtId !== 'number') {
-        if (u.role === Role.ADMIN) {
+      // admin 期望 districtId=null（市级）；其余角色期望按所属站点派生，不一致才回填（幂等）
+      if (u.role === Role.ADMIN) {
+        if (u.districtId !== null) {
           u.districtId = null;
-        } else {
-          const st = u.stationId != null ? this.stations.get(u.stationId) : undefined;
-          u.districtId = st?.districtId ?? null;
+          changed = true;
         }
+        return;
+      }
+      // 区县管理员：districtId 即其管理的区县，stationId 恒为 null，不可按站点派生
+      if (u.role === Role.DISTRICT_ADMIN) {
+        return;
+      }
+      const derived = u.stationId != null ? (this.stations.get(u.stationId)?.districtId ?? null) : null;
+      if (u.districtId !== derived) {
+        u.districtId = derived;
         changed = true;
       }
     });
@@ -220,6 +232,7 @@ export class MongoStorageService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async connectAndLoad() {
+    const { MongoClient } = require('mongodb') as any;
     this.client = new MongoClient(this.uri, {
       connectTimeoutMS: 10000,
       serverSelectionTimeoutMS: 5000,
