@@ -1,5 +1,5 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe, Logger } from '@nestjs/common';
+import { ValidationPipe, BadRequestException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
@@ -7,6 +7,8 @@ import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { LogsService } from './modules/logs/logs.service';
+import { BusinessCode } from './common/exceptions/business.exception';
+import { formatValidationErrors } from './common/validation-error';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
@@ -30,6 +32,14 @@ async function bootstrap() {
     forbidNonWhitelisted: false,
     transform: true,
     transformOptions: { enableImplicitConversion: true },
+    // 校验错误转中文路径：dutyItems[0].customerPhone → 「第 1 项工单·联系电话：手机号格式错误」
+    exceptionFactory: (errors) => {
+      const messages = formatValidationErrors(errors);
+      return new BadRequestException({
+        code: BusinessCode.PARAM_INVALID,
+        message: messages.length ? messages.join('; ') : '参数校验失败',
+      });
+    },
   }));
 
   // 全局过滤器 / 拦截器

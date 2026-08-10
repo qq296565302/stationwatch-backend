@@ -107,6 +107,21 @@ export class DutyItemDto {
   updatedAt: string;
 }
 
+export class PendingIssueDto {
+  @ApiProperty({ example: '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d', description: '遗留问题 ID（UUID）' })
+  id: string;
+  @ApiProperty({ example: '2 号变压器待维修', description: '问题内容' })
+  content: string;
+  @ApiProperty({ example: false, description: '是否已确认解决' })
+  isResolved: boolean;
+  @ApiProperty({ example: null, nullable: true, description: '解决时间' })
+  resolvedAt: string | null;
+  @ApiProperty({ example: null, nullable: true, description: '解决人用户 ID' })
+  resolvedBy: number | null;
+  @ApiProperty({ example: null, nullable: true, description: '解决人姓名' })
+  resolvedByName: string | null;
+}
+
 export class DutyRecordDto {
   @ApiProperty({ example: 1 })
   id: number;
@@ -130,8 +145,8 @@ export class DutyRecordDto {
   hasPending: boolean;
   @ApiProperty({ example: '上午完成巡检' })
   otherMatters: string;
-  @ApiProperty({ example: '' })
-  pendingIssues: string;
+  @ApiProperty({ type: [PendingIssueDto], description: '遗留问题（逐条确认解决）' })
+  pendingIssues: PendingIssueDto[];
   @ApiProperty({ example: null, nullable: true })
   lockedAt: string | null;
   @ApiProperty({ example: null, nullable: true })

@@ -17,6 +17,12 @@ import {
 } from './types';
 import { seedInitialData, seedDistricts, ensureDemoUsers } from './seed';
 import { Role } from '../common/types/role.enum';
+import {
+  parsePendingIssues,
+  serializePendingIssues,
+  hasUnresolved,
+  textToIssues,
+} from '../common/pending-issues';
 
 /**
  * MySQL 持久化的存储服务
@@ -237,6 +243,10 @@ export class MysqlStorageService implements OnModuleInit, OnModuleDestroy {
           this.logger.log('[MysqlStorage] 已执行 v3 组织层级迁移（区县 + districtId + 演示账号回填）');
           await this.flush();
         }
+        if (this.migrateLegacyPendingIssues()) {
+          this.logger.log('[MysqlStorage] 已迁移遗留问题为逐条 JSON 格式（保留已解决条目）');
+          await this.flush();
+        }
       }
       this.logger.log(
         `[MysqlStorage] 已连接 ${this.database}，stations=${this.stations.size}, users=${this.users.size}, records=${this.records.size}, items=${this.items.size}`,
@@ -446,6 +456,22 @@ export class MysqlStorageService implements OnModuleInit, OnModuleDestroy {
       }
     });
     if (ensureDemoUsers(this as any)) changed = true;
+    return changed;
+  }
+
+  /**
+   * 遗留问题逐条 JSON 迁移（幂等）：非空且不以 `[` 开头的纯文本 → 按行拆成未解决条目 JSON 串，并重算 hasPending
+   */
+  private migrateLegacyPendingIssues(): boolean {
+    let changed = false;
+    this.records.forEach((r) => {
+      const trimmed = (r.pendingIssues || '').trim();
+      if (trimmed && !trimmed.startsWith('[')) {
+        r.pendingIssues = serializePendingIssues(textToIssues(trimmed));
+        r.hasPending = hasUnresolved(parsePendingIssues(r.pendingIssues));
+        changed = true;
+      }
+    });
     return changed;
   }
 

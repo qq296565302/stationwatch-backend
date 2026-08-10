@@ -55,7 +55,7 @@ export class DutyRecordsController {
   @Roles(Role.DUTY_OFFICER, Role.SUPERVISOR, Role.ADMIN)
   @ApiOperation({
     summary: '智能 upsert（核心接口）',
-    description: '同站同一天存在则合并工单，不存在则新建；otherMatters/pendingIssues 为整体覆盖（前端提交完整表单，避免重复）。',
+    description: '同站同一天存在则合并工单，不存在则新建；otherMatters 为整体覆盖；pendingIssues 多行文本与已有遗留问题合并（已解决条目保留，未解决按行匹配），提交完整表单即可。',
   })
   @ApiResponse({ status: 200, description: '成功', type: DutyRecordDto })
   @ApiResponse({ status: 20004, description: '工单数超限' })
@@ -97,5 +97,19 @@ export class DutyRecordsController {
   @ApiResponse({ status: 200, description: '成功', type: DutyRecordDto })
   unlock(@Param('id', ParseIntPipe) id: number) {
     return this.service.unlock(id);
+  }
+
+  @Post(':id/pending/:issueId/resolve')
+  @Roles(Role.DUTY_OFFICER, Role.SUPERVISOR, Role.ADMIN)
+  @ApiOperation({ summary: '确认解决一条遗留问题（记录解决人与解决时间）' })
+  @ApiResponse({ status: 200, description: '成功', type: DutyRecordDto })
+  @ApiResponse({ status: 20001, description: '记录不存在' })
+  @ApiResponse({ status: 20003, description: '记录已锁定' })
+  resolvePending(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('issueId') issueId: string,
+    @CurrentUser() user: UserPayload,
+  ) {
+    return this.service.resolvePending(id, issueId, user);
   }
 }

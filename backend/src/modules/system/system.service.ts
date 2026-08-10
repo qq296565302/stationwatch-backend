@@ -33,6 +33,7 @@ export class SystemService {
     'duty.allow_edit_history',
     'duty.auto_start_time',
     'duty.pending_notify',
+    'duty.pending_notify_interval',
   ]);
 
   update(dto: UpdateSystemConfigDto, user: UserPayload) {

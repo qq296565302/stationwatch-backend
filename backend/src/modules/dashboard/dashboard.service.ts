@@ -101,8 +101,8 @@ export class DashboardService {
     const records = this.scopeRecords(user, stationId);
 
     const alerts: any[] = [];
-    // 1. 有遗留问题
-    records.filter(r => r.hasPending).forEach(r => {
+    // 1. 有遗留问题（归档记录不计入，避免归档后仍持续提醒）
+    records.filter(r => r.hasPending && r.status !== 'archived').forEach(r => {
       const station = this.storage.getStation(r.stationId);
       alerts.push({
         type: 'pending',

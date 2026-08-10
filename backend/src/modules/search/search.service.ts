@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { StorageService } from '../../storage/storage.service';
 import { UserPayload } from '../../common/types/user-payload';
 import { ScopeService } from '../../common/scope/scope.service';
+import { parsePendingIssues } from '../../common/pending-issues';
 
 export interface SearchResult {
   type: 'record' | 'item';
@@ -35,7 +36,9 @@ export class SearchService {
       const station = this.storage.getStation(r.stationId);
       const matches: string[] = [];
       if (r.otherMatters?.toLowerCase().includes(pattern)) matches.push(r.otherMatters);
-      if (r.pendingIssues?.toLowerCase().includes(pattern)) matches.push(r.pendingIssues);
+      // 遗留问题按 content 逐条匹配（存储为 JSON 数组串，不可整体 includes）
+      const pendingHit = parsePendingIssues(r.pendingIssues).find(p => p.content.toLowerCase().includes(pattern));
+      if (pendingHit) matches.push(pendingHit.content);
       if (r.weatherLabel?.toLowerCase().includes(pattern)) matches.push(r.weatherLabel);
 
       if (matches.length > 0) {

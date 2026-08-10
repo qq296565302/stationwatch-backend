@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsOptional, IsInt, IsIn, IsDateString, IsArray, ValidateNested, IsBoolean, Matches } from 'class-validator';
+import { IsString, IsOptional, IsInt, IsIn, IsDateString, IsArray, ValidateNested, IsBoolean, Matches, MaxLength } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class DutyItemUpsertDto {
@@ -75,8 +75,8 @@ export class UpsertDutyRecordDto {
   @IsOptional() @IsString()
   otherMatters?: string;
 
-  @ApiProperty({ example: '2 号变压器待维修', required: false, description: '遗留问题' })
-  @IsOptional() @IsString()
+  @ApiProperty({ example: '2 号变压器待维修', required: false, description: '遗留问题（多行文本，每行一条；已解决条目由后端合并保留，不可删除）' })
+  @IsOptional() @IsString() @MaxLength(2000, { message: '遗留问题不能超过 2000 字' })
   pendingIssues?: string;
 }
 
@@ -93,8 +93,8 @@ export class UpdateDutyRecordDto {
   @IsOptional() @IsString()
   otherMatters?: string;
 
-  @ApiProperty({ required: false })
-  @IsOptional() @IsString()
+  @ApiProperty({ required: false, description: '遗留问题（多行文本，每行一条；已解决条目由后端合并保留，不可删除）' })
+  @IsOptional() @IsString() @MaxLength(2000, { message: '遗留问题不能超过 2000 字' })
   pendingIssues?: string;
 }
 

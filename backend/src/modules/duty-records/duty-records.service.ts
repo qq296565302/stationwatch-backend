@@ -15,6 +15,14 @@ import { PaginatedResult } from '../../common/types/pagination';
 import { Role } from '../../common/types/role.enum';
 import { ScheduleService } from '../schedule/schedule.service';
 import { ScopeService } from '../../common/scope/scope.service';
+import {
+  PendingIssue,
+  parsePendingIssues,
+  serializePendingIssues,
+  hasUnresolved,
+  textToIssues,
+  mergePendingIssues,
+} from '../../common/pending-issues';
 
 @Injectable()
 export class DutyRecordsService {
@@ -98,7 +106,12 @@ export class DutyRecordsService {
       record.weatherLabel = dto.weatherLabel;
       // 覆盖而非追加：前端每次提交的是完整表单，追加会造成遗留问题/其他事项重复
       if (dto.otherMatters !== undefined) record.otherMatters = dto.otherMatters;
-      if (dto.pendingIssues !== undefined) record.pendingIssues = dto.pendingIssues;
+      // 遗留问题走合并：保留已解决条目，未解决按 content 逐行匹配消费，防止已解决记录丢失
+      if (dto.pendingIssues !== undefined) {
+        record.pendingIssues = serializePendingIssues(
+          mergePendingIssues(record.pendingIssues, dto.pendingIssues),
+        );
+      }
     } else {
       // 新建
       const newId = this.storage.nextIdOf('record');
@@ -114,7 +127,7 @@ export class DutyRecordsService {
         completedCount: 0,
         hasPending: false,
         otherMatters: dto.otherMatters || '',
-        pendingIssues: dto.pendingIssues || '',
+        pendingIssues: serializePendingIssues(textToIssues(dto.pendingIssues || '')),
         lockedAt: null,
         lockedBy: null,
         createdAt: now,
@@ -173,7 +186,7 @@ export class DutyRecordsService {
     const allItems = this.storage.getItemsByRecord(record.id);
     record.itemCount = allItems.length;
     record.completedCount = allItems.filter(i => i.isCompleted).length;
-    record.hasPending = !!record.pendingIssues?.trim();
+    record.hasPending = hasUnresolved(parsePendingIssues(record.pendingIssues));
     record.updatedAt = now;
     this.storage.saveRecord(record);
 
@@ -260,8 +273,55 @@ export class DutyRecordsService {
     if (dto.weather !== undefined) r.weather = dto.weather;
     if (dto.weatherLabel !== undefined) r.weatherLabel = dto.weatherLabel;
     if (dto.otherMatters !== undefined) r.otherMatters = dto.otherMatters;
-    if (dto.pendingIssues !== undefined) r.pendingIssues = dto.pendingIssues;
-    r.hasPending = !!r.pendingIssues?.trim();
+    if (dto.pendingIssues !== undefined) {
+      r.pendingIssues = serializePendingIssues(
+        mergePendingIssues(r.pendingIssues, dto.pendingIssues),
+      );
+    }
+    r.hasPending = hasUnresolved(parsePendingIssues(r.pendingIssues));
+    r.updatedAt = this.storage.now();
+    this.storage.saveRecord(r);
+    return this.toDetail(r);
+  }
+
+  /**
+   * 确认解决一条遗留问题（权限链对齐 update）
+   */
+  async resolvePending(id: number, issueId: string, user: UserPayload): Promise<DutyRecordDetail> {
+    this.autoLockExpired();
+    const r = this.storage.getRecord(id);
+    if (!r) throw new BusinessException(BusinessCode.RECORD_NOT_FOUND, '记录不存在');
+    // 区县管理员无值班记录编辑权限
+    if (user.role === Role.DISTRICT_ADMIN) {
+      throw new BusinessException(BusinessCode.FORBIDDEN, '区县管理员无值班记录编辑权限');
+    }
+    // 站点归属校验：非管理员只能操作本所记录
+    if (user.role !== Role.ADMIN && !this.scope.canAccessStation(user, r.stationId)) {
+      throw new BusinessException(BusinessCode.FORBIDDEN, '无权操作其他站点的记录');
+    }
+    if (r.status === 'locked' && user.role !== Role.ADMIN) {
+      throw new BusinessException(BusinessCode.RECORD_LOCKED, '记录已锁定');
+    }
+    if (user.role === Role.DUTY_OFFICER && r.creatorId !== user.id) {
+      throw new BusinessException(BusinessCode.FORBIDDEN, '只能操作自己创建的记录');
+    }
+
+    const list = parsePendingIssues(r.pendingIssues);
+    const target = list.find(p => p.id === issueId);
+    if (!target) {
+      throw new BusinessException(BusinessCode.NOT_FOUND, '遗留问题不存在');
+    }
+    if (target.isResolved) {
+      throw new BusinessException(BusinessCode.PARAM_INVALID, '该遗留问题已确认解决');
+    }
+
+    target.isResolved = true;
+    target.resolvedAt = this.storage.now();
+    target.resolvedBy = user.id;
+    // UserPayload 无 realName，必须查库
+    target.resolvedByName = this.storage.getUser(user.id)?.realName || user.username;
+    r.pendingIssues = serializePendingIssues(list);
+    r.hasPending = hasUnresolved(list);
     r.updatedAt = this.storage.now();
     this.storage.saveRecord(r);
     return this.toDetail(r);
@@ -315,8 +375,12 @@ export class DutyRecordsService {
     const creator = this.storage.getUser(r.creatorId);
     // 值班员 = 当天该站点排班名单（按 recordDate + stationId 从值班表取，未配置排班时为空）
     const dutyOfficers = this.schedule.getDutyOfficersOn(r.recordDate, r.stationId).map(o => o.realName);
+    // 遗留问题统一出口：解析为数组并权威重算 hasPending（存储层原样透传字符串）
+    const pending = parsePendingIssues(r.pendingIssues);
     return {
       ...r,
+      pendingIssues: pending,
+      hasPending: hasUnresolved(pending),
       items,
       station: station ? { id: station.id, name: station.name, code: station.code } : null,
       creator: creator
@@ -332,7 +396,8 @@ export class DutyRecordsService {
   }
 }
 
-export interface DutyRecordDetail extends DutyRecord {
+export interface DutyRecordDetail extends Omit<DutyRecord, 'pendingIssues'> {
+  pendingIssues: PendingIssue[];
   items: DutyItem[];
   station: { id: number; name: string; code: string } | null;
   creator: { id: number; username: string; realName: string } | null;
