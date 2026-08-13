@@ -208,6 +208,20 @@ export class UsersService {
   async remove(id: number, actor?: UserPayload) {
     const user = this.storage.getUser(id);
     if (!user) throw new BusinessException(BusinessCode.NOT_FOUND, '用户不存在');
+    // 任何角色都不能删除自己的账号
+    if (actor && actor.id === id) {
+      throw new BusinessException(BusinessCode.FORBIDDEN, '不能删除当前登录账号');
+    }
+    // 所长：只能删除本所的非管理员用户
+    if (actor && actor.role === Role.SUPERVISOR) {
+      if (user.stationId !== actor.stationId) {
+        throw new BusinessException(BusinessCode.FORBIDDEN, '无权删除其他站点用户');
+      }
+      if (user.role === Role.ADMIN || user.role === Role.DISTRICT_ADMIN) {
+        throw new BusinessException(BusinessCode.FORBIDDEN, '无权删除管理员账号');
+      }
+    }
+    // 区县管理员：只能删除本区县供电所的非管理员用户
     if (actor && actor.role === Role.DISTRICT_ADMIN) {
       if (user.role === Role.ADMIN || user.role === Role.DISTRICT_ADMIN) {
         throw new BusinessException(BusinessCode.FORBIDDEN, '无权删除管理员账号');
@@ -222,6 +236,8 @@ export class UsersService {
     if (user.role === Role.ADMIN && this.adminCount() <= 1) {
       throw new BusinessException(BusinessCode.FORBIDDEN, '不能删除唯一的超级管理员');
     }
+    // 吊销被删用户的登录态
+    this.storage.deleteRefreshToken(id);
     this.storage.deleteUser(id);
     return { ok: true };
   }

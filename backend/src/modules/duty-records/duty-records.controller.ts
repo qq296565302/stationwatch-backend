@@ -83,22 +83,6 @@ export class DutyRecordsController {
     return this.service.remove(id);
   }
 
-  @Post(':id/lock')
-  @Roles(Role.SUPERVISOR, Role.ADMIN)
-  @ApiOperation({ summary: '锁定记录' })
-  @ApiResponse({ status: 200, description: '成功', type: DutyRecordDto })
-  lock(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: UserPayload) {
-    return this.service.lock(id, user);
-  }
-
-  @Post(':id/unlock')
-  @Roles(Role.ADMIN)
-  @ApiOperation({ summary: '解锁记录（仅管理员）' })
-  @ApiResponse({ status: 200, description: '成功', type: DutyRecordDto })
-  unlock(@Param('id', ParseIntPipe) id: number) {
-    return this.service.unlock(id);
-  }
-
   @Post(':id/pending/:issueId/resolve')
   @Roles(Role.DUTY_OFFICER, Role.SUPERVISOR, Role.ADMIN)
   @ApiOperation({ summary: '确认解决一条遗留问题（记录解决人与解决时间）' })

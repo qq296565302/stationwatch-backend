@@ -49,8 +49,8 @@ export class UsersController {
   }
 
   @Delete(':id')
-  @Roles(Role.ADMIN, Role.DISTRICT_ADMIN)
-  @ApiOperation({ summary: '删除用户（市级超管/区县管理员本区县）' })
+  @Roles(Role.ADMIN, Role.SUPERVISOR, Role.DISTRICT_ADMIN)
+  @ApiOperation({ summary: '删除用户（市级超管/区县管理员/所长，均不可删自己；所长仅本所、区县管理员仅本区县）' })
   @ApiResponse({ status: 200, description: '成功' })
   remove(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: UserPayload) {
     return this.service.remove(id, user);

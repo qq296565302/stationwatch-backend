@@ -338,39 +338,6 @@ export class DutyRecordsService {
     return { ok: true };
   }
 
-  async lock(id: number, user: UserPayload): Promise<DutyRecordDetail> {
-    const r = this.storage.getRecord(id);
-    if (!r) throw new BusinessException(BusinessCode.RECORD_NOT_FOUND, '记录不存在');
-    // 区县管理员无值班记录编辑权限
-    if (user.role === Role.DISTRICT_ADMIN) {
-      throw new BusinessException(BusinessCode.FORBIDDEN, '区县管理员无值班记录编辑权限');
-    }
-    // 站点归属校验：非管理员只能锁定本所记录
-    if (user.role !== Role.ADMIN && !this.scope.canAccessStation(user, r.stationId)) {
-      throw new BusinessException(BusinessCode.FORBIDDEN, '无权操作其他站点的记录');
-    }
-    if (r.status === 'locked') {
-      throw new BusinessException(BusinessCode.RECORD_LOCKED, '记录已经是锁定状态');
-    }
-    r.status = 'locked';
-    r.lockedAt = this.storage.now();
-    r.lockedBy = user.id;
-    r.updatedAt = r.lockedAt;
-    this.storage.saveRecord(r);
-    return this.toDetail(r);
-  }
-
-  async unlock(id: number): Promise<DutyRecordDetail> {
-    const r = this.storage.getRecord(id);
-    if (!r) throw new BusinessException(BusinessCode.RECORD_NOT_FOUND, '记录不存在');
-    r.status = 'active';
-    r.lockedAt = null;
-    r.lockedBy = null;
-    r.updatedAt = this.storage.now();
-    this.storage.saveRecord(r);
-    return this.toDetail(r);
-  }
-
   // ====== 内部工具 ======
   private toDetail(r: DutyRecord): DutyRecordDetail {
     const items = this.storage.getItemsByRecord(r.id);
