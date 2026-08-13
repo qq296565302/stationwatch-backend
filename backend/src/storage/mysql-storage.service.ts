@@ -51,7 +51,7 @@ type DictType = (typeof DICT_TYPE)[keyof typeof DICT_TYPE];
 const DISTRICT_COLS = ['id', 'name', 'code', 'sortOrder', 'isActive', 'createdAt', 'updatedAt'];
 const STATION_COLS = [
   'id', 'name', 'code', 'districtId', 'region', 'voltage', 'feeders', 'transformers',
-  'maxDutyItemsPerRecord', 'orderTimeLimit', 'isActive', 'createdAt', 'updatedAt',
+  'orderTimeLimit', 'isActive', 'createdAt', 'updatedAt',
 ];
 const USER_COLS = [
   'id', 'username', 'passwordHash', 'realName', 'role', 'stationId', 'districtId',
@@ -90,7 +90,7 @@ const DDL_STATEMENTS: string[] = [
     \`id\` INT NOT NULL, \`name\` VARCHAR(100) NOT NULL, \`code\` VARCHAR(20) NOT NULL,
     \`districtId\` INT NOT NULL DEFAULT 1, \`region\` VARCHAR(100) NULL, \`voltage\` VARCHAR(20) NULL,
     \`feeders\` INT NOT NULL DEFAULT 0, \`transformers\` INT NOT NULL DEFAULT 0,
-    \`maxDutyItemsPerRecord\` INT NOT NULL DEFAULT 11, \`orderTimeLimit\` INT NOT NULL DEFAULT 45,
+    \`orderTimeLimit\` INT NOT NULL DEFAULT 45,
     \`isActive\` TINYINT(1) NOT NULL DEFAULT 1,
     \`createdAt\` VARCHAR(40) NOT NULL, \`updatedAt\` VARCHAR(40) NOT NULL,
     PRIMARY KEY (\`id\`), KEY \`idx_stations_district\` (\`districtId\`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
@@ -820,7 +820,7 @@ function rowToStation(r: any): Station {
     id: Number(r.id), name: r.name, code: r.code, districtId: Number(r.districtId),
     region: r.region ?? null, voltage: r.voltage ?? null,
     feeders: Number(r.feeders), transformers: Number(r.transformers),
-    maxDutyItemsPerRecord: Number(r.maxDutyItemsPerRecord), orderTimeLimit: Number(r.orderTimeLimit),
+    orderTimeLimit: Number(r.orderTimeLimit),
     isActive: !!r.isActive, createdAt: r.createdAt, updatedAt: r.updatedAt,
   };
 }

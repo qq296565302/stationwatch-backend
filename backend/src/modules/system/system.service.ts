@@ -29,7 +29,6 @@ export class SystemService {
 
   /** 所长可修改的全局配置白名单（值班规则）；其余 key 仅 admin 可写 */
   private readonly SUPERVISOR_WHITELIST = new Set([
-    'duty.max_items_per_record',
     'duty.allow_edit_history',
     'duty.auto_start_time',
     'duty.pending_notify',

@@ -24,6 +24,9 @@ import {
   mergePendingIssues,
 } from '../../common/pending-issues';
 
+/** 单条记录工单数隐藏上限（安全阀）：日常填报无限制，仅防极端情况 */
+const MAX_ITEMS_PER_RECORD = 1000;
+
 @Injectable()
 export class DutyRecordsService {
   private readonly logger = new Logger(DutyRecordsService.name);
@@ -157,8 +160,8 @@ export class DutyRecordsService {
         this.storage.saveItem(existing);
       } else {
         // 追加
-        if (record.itemCount >= station.maxDutyItemsPerRecord) {
-          throw new BusinessException(BusinessCode.ITEM_LIMIT_EXCEEDED, `单条记录工单数已达上限 ${station.maxDutyItemsPerRecord}`);
+        if (record.itemCount >= MAX_ITEMS_PER_RECORD) {
+          throw new BusinessException(BusinessCode.ITEM_LIMIT_EXCEEDED, `单条记录工单数已达上限 ${MAX_ITEMS_PER_RECORD}`);
         }
         const newItem: DutyItem = {
           id: this.storage.nextIdOf('item'),

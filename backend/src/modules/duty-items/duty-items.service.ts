@@ -7,6 +7,9 @@ import { CreateDutyItemDto, UpdateDutyItemDto } from './dto/duty-items.dto';
 import { Role } from '../../common/types/role.enum';
 import { ScopeService } from '../../common/scope/scope.service';
 
+/** 单条记录工单数隐藏上限（安全阀）：日常填报无限制，仅防极端情况 */
+const MAX_ITEMS_PER_RECORD = 1000;
+
 @Injectable()
 export class DutyItemsService {
   private readonly logger = new Logger(DutyItemsService.name);
@@ -34,11 +37,9 @@ export class DutyItemsService {
     this.assertStationScope(record, user);
     this.assertCanEdit(record, user);
 
-    const station = this.storage.getStation(record.stationId);
-    const max = station?.maxDutyItemsPerRecord ?? 11;
     const currentCount = this.storage.getItemsByRecord(recordId).length;
-    if (currentCount >= max) {
-      throw new BusinessException(BusinessCode.ITEM_LIMIT_EXCEEDED, `单条记录工单数已达上限 ${max}`);
+    if (currentCount >= MAX_ITEMS_PER_RECORD) {
+      throw new BusinessException(BusinessCode.ITEM_LIMIT_EXCEEDED, `单条记录工单数已达上限 ${MAX_ITEMS_PER_RECORD}`);
     }
 
     const now = this.storage.now();

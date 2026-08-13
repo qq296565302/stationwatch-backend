@@ -46,7 +46,6 @@ export class StationsService {
       voltage: dto.voltage,
       feeders: dto.feeders ?? 0,
       transformers: dto.transformers ?? 0,
-      maxDutyItemsPerRecord: dto.maxDutyItemsPerRecord ?? 11,
       orderTimeLimit: dto.orderTimeLimit ?? 45,
       isActive: dto.isActive ?? true,
       createdAt: now,
@@ -73,7 +72,6 @@ export class StationsService {
     if (dto.voltage !== undefined) s.voltage = dto.voltage;
     if (dto.feeders !== undefined) s.feeders = dto.feeders;
     if (dto.transformers !== undefined) s.transformers = dto.transformers;
-    if (dto.maxDutyItemsPerRecord !== undefined) s.maxDutyItemsPerRecord = dto.maxDutyItemsPerRecord;
     if (dto.orderTimeLimit !== undefined) s.orderTimeLimit = dto.orderTimeLimit;
     if (dto.isActive !== undefined) s.isActive = dto.isActive;
     s.updatedAt = this.storage.now();

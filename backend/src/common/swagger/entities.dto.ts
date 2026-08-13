@@ -62,8 +62,6 @@ export class StationDto {
   feeders: number;
   @ApiProperty({ example: 24 })
   transformers: number;
-  @ApiProperty({ example: 11 })
-  maxDutyItemsPerRecord: number;
   @ApiProperty({ example: 45 })
   orderTimeLimit: number;
   @ApiProperty({ example: true })
