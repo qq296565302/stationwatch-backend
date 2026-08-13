@@ -30,7 +30,7 @@ export class CreateStationDto {
   @IsOptional() @IsInt() @Min(0) @Max(9999)
   transformers?: number;
 
-  @ApiProperty({ example: 45, required: false, minimum: 5, maximum: 1440 })
+  @ApiProperty({ example: 60, required: false, minimum: 5, maximum: 1440 })
   @IsOptional() @IsInt() @Min(5) @Max(1440)
   orderTimeLimit?: number;
 
@@ -68,7 +68,7 @@ export class UpdateStationDto {
   @IsOptional() @IsInt() @Min(0) @Max(9999)
   transformers?: number;
 
-  @ApiProperty({ example: 45, required: false, minimum: 5, maximum: 1440 })
+  @ApiProperty({ example: 60, required: false, minimum: 5, maximum: 1440 })
   @IsOptional() @IsInt() @Min(5) @Max(1440)
   orderTimeLimit?: number;
 

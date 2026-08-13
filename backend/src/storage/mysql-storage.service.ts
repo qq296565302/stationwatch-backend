@@ -90,7 +90,7 @@ const DDL_STATEMENTS: string[] = [
     \`id\` INT NOT NULL, \`name\` VARCHAR(100) NOT NULL, \`code\` VARCHAR(20) NOT NULL,
     \`districtId\` INT NOT NULL DEFAULT 1, \`region\` VARCHAR(100) NULL, \`voltage\` VARCHAR(20) NULL,
     \`feeders\` INT NOT NULL DEFAULT 0, \`transformers\` INT NOT NULL DEFAULT 0,
-    \`orderTimeLimit\` INT NOT NULL DEFAULT 45,
+    \`orderTimeLimit\` INT NOT NULL DEFAULT 60,
     \`isActive\` TINYINT(1) NOT NULL DEFAULT 1,
     \`createdAt\` VARCHAR(40) NOT NULL, \`updatedAt\` VARCHAR(40) NOT NULL,
     PRIMARY KEY (\`id\`), KEY \`idx_stations_district\` (\`districtId\`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
@@ -236,7 +236,7 @@ export class MysqlStorageService implements OnModuleInit, OnModuleDestroy {
       } else {
         this.migrateLegacySchedule();
         if (this.backfillOrderTimeLimit()) {
-          this.logger.log('[MysqlStorage] 已为旧站点数据回填工单时限 orderTimeLimit=45');
+          this.logger.log('[MysqlStorage] 已为旧站点数据回填工单时限 orderTimeLimit=60');
           await this.flush();
         }
         if (this.backfillOrgHierarchy()) {
@@ -417,7 +417,7 @@ export class MysqlStorageService implements OnModuleInit, OnModuleDestroy {
     let changed = false;
     this.stations.forEach((s) => {
       if (!s.orderTimeLimit) {
-        s.orderTimeLimit = 45;
+        s.orderTimeLimit = 60;
         changed = true;
       }
     });

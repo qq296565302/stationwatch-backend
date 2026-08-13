@@ -145,17 +145,17 @@ export class FileStorageService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /** 工单时限回填：旧站点数据缺 orderTimeLimit 字段，统一补默认 45（幂等） */
+  /** 工单时限回填：旧站点数据缺 orderTimeLimit 字段，统一补默认 60（幂等） */
   private backfillOrderTimeLimit() {
     let changed = false;
     this.stations.forEach((s) => {
       if (!s.orderTimeLimit) {
-        s.orderTimeLimit = 45;
+        s.orderTimeLimit = 60;
         changed = true;
       }
     });
     if (changed) {
-      this.logger.log('[FileStorage] 已为旧站点数据回填工单时限 orderTimeLimit=45');
+      this.logger.log('[FileStorage] 已为旧站点数据回填工单时限 orderTimeLimit=60');
       this.markDirty();
     }
   }

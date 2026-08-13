@@ -115,9 +115,9 @@ export class MongoStorageService implements OnModuleInit, OnModuleDestroy {
     try {
       await this.connectAndLoad();
       this.migrateLegacySchedule();
-      // 旧站点数据缺工单时限，统一回填默认 45（幂等）
+      // 旧站点数据缺工单时限，统一回填默认 60（幂等）
       if (this.backfillOrderTimeLimit()) {
-        this.logger.log('[MongoStorage] 已为旧站点数据回填工单时限 orderTimeLimit=45');
+        this.logger.log('[MongoStorage] 已为旧站点数据回填工单时限 orderTimeLimit=60');
         await this.flush();
       }
       // 三级组织迁移：区县 + districtId 回填（幂等，保留历史记录）
@@ -158,12 +158,12 @@ export class MongoStorageService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /** 工单时限回填：旧站点数据缺 orderTimeLimit 字段，统一补默认 45，返回是否发生变更 */
+  /** 工单时限回填：旧站点数据缺 orderTimeLimit 字段，统一补默认 60，返回是否发生变更 */
   private backfillOrderTimeLimit(): boolean {
     let changed = false;
     this.stations.forEach((s) => {
       if (!s.orderTimeLimit) {
-        s.orderTimeLimit = 45;
+        s.orderTimeLimit = 60;
         changed = true;
       }
     });

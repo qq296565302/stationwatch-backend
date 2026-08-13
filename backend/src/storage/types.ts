@@ -19,7 +19,7 @@ export interface Station {
   voltage?: string;
   feeders: number;
   transformers: number;
-  orderTimeLimit: number; // 工单时限（分钟），站点级，默认 45
+  orderTimeLimit: number; // 工单时限（分钟），站点级，默认 60
   isActive: boolean;
   createdAt: string;
   updatedAt: string;

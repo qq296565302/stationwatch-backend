@@ -46,7 +46,7 @@ export class StationsService {
       voltage: dto.voltage,
       feeders: dto.feeders ?? 0,
       transformers: dto.transformers ?? 0,
-      orderTimeLimit: dto.orderTimeLimit ?? 45,
+      orderTimeLimit: dto.orderTimeLimit ?? 60,
       isActive: dto.isActive ?? true,
       createdAt: now,
       updatedAt: now,

@@ -87,7 +87,7 @@ export function seedInitialData(storage: StorageService) {
       voltage: '10kV',
       feeders: 8,
       transformers: 24,
-      orderTimeLimit: 45,
+      orderTimeLimit: 60,
       isActive: true,
       createdAt: now,
       updatedAt: now,
