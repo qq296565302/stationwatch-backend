@@ -56,6 +56,7 @@ export class DutyItemsService {
       handler: dto.handler || null,
       result: dto.result || null,
       isCompleted: false,
+      customerSatisfied: dto.customerSatisfied ?? false,
       sortOrder: currentCount,
       createdAt: now,
       updatedAt: now,
@@ -90,6 +91,7 @@ export class DutyItemsService {
     if (dto.handler !== undefined) item.handler = dto.handler;
     if (dto.result !== undefined) item.result = dto.result;
     if (dto.isCompleted !== undefined) item.isCompleted = dto.isCompleted;
+    if (dto.customerSatisfied !== undefined) item.customerSatisfied = dto.customerSatisfied;
     item.updatedAt = this.storage.now();
     this.storage.saveItem(item);
 

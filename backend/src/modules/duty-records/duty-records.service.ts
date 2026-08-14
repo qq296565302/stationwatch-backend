@@ -156,6 +156,7 @@ export class DutyRecordsService {
         existing.handler = itemDto.handler ?? null;
         existing.result = itemDto.result ?? null;
         if (itemDto.isCompleted !== undefined) existing.isCompleted = itemDto.isCompleted;
+        if (itemDto.customerSatisfied !== undefined) existing.customerSatisfied = itemDto.customerSatisfied;
         existing.updatedAt = now;
         this.storage.saveItem(existing);
       } else {
@@ -176,6 +177,7 @@ export class DutyRecordsService {
           handler: itemDto.handler || null,
           result: itemDto.result || null,
           isCompleted: itemDto.isCompleted ?? false,
+          customerSatisfied: itemDto.customerSatisfied ?? false,
           sortOrder: existingItems.length,
           createdAt: now,
           updatedAt: now,

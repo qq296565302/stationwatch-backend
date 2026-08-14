@@ -29,6 +29,10 @@ export class CreateDutyItemDto {
   @ApiProperty({ example: '已派单', required: false })
   @IsOptional() @IsString()
   result?: string;
+
+  @ApiProperty({ example: false, required: false, description: '客户满意标签（仅已完成的工单可选）' })
+  @IsOptional() @IsBoolean()
+  customerSatisfied?: boolean;
 }
 
 export class UpdateDutyItemDto {
@@ -71,4 +75,8 @@ export class UpdateDutyItemDto {
   @ApiProperty({ example: true, required: false })
   @IsOptional() @IsBoolean()
   isCompleted?: boolean;
+
+  @ApiProperty({ example: false, required: false, description: '客户满意标签（仅已完成的工单可选）' })
+  @IsOptional() @IsBoolean()
+  customerSatisfied?: boolean;
 }

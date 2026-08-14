@@ -46,6 +46,10 @@ export class DutyItemUpsertDto {
   @ApiProperty({ example: false, required: false })
   @IsOptional() @IsBoolean()
   isCompleted?: boolean;
+
+  @ApiProperty({ example: false, required: false, description: '客户满意标签（仅已完成的工单可选）' })
+  @IsOptional() @IsBoolean()
+  customerSatisfied?: boolean;
 }
 
 export class UpsertDutyRecordDto {

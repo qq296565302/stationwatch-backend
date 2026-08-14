@@ -80,6 +80,7 @@ export interface DutyItem {
   handler: string | null;
   result: string | null;
   isCompleted: boolean;
+  customerSatisfied: boolean; // 客户满意标签（仅已完成工单可标记）
   sortOrder: number;
   createdAt: string;
   updatedAt: string;

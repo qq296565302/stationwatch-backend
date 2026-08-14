@@ -64,8 +64,8 @@ const RECORD_COLS = [
 ];
 const ITEM_COLS = [
   'id', 'recordId', 'businessType', 'content', 'acceptTime', 'endTime', 'customerName',
-  'customerPhone', 'customerAddress', 'handler', 'result', 'isCompleted', 'sortOrder',
-  'createdAt', 'updatedAt',
+  'customerPhone', 'customerAddress', 'handler', 'result', 'isCompleted', 'customerSatisfied',
+  'sortOrder', 'createdAt', 'updatedAt',
 ];
 const DICT_COLS = ['id', 'type', 'label', 'sortOrder', 'isActive', 'createdAt', 'stationId', 'phone'];
 const CONFIG_COLS = ['configKey', 'configValue', 'description', 'updatedBy', 'updatedAt'];
@@ -118,7 +118,9 @@ const DDL_STATEMENTS: string[] = [
     \`acceptTime\` VARCHAR(5) NULL, \`endTime\` VARCHAR(5) NULL,
     \`customerName\` VARCHAR(100) NULL, \`customerPhone\` VARCHAR(30) NULL, \`customerAddress\` VARCHAR(200) NULL,
     \`handler\` VARCHAR(100) NULL, \`result\` VARCHAR(200) NULL,
-    \`isCompleted\` TINYINT(1) NOT NULL DEFAULT 0, \`sortOrder\` INT NOT NULL DEFAULT 0,
+    \`isCompleted\` TINYINT(1) NOT NULL DEFAULT 0,
+    \`customerSatisfied\` TINYINT(1) NOT NULL DEFAULT 0,
+    \`sortOrder\` INT NOT NULL DEFAULT 0,
     \`createdAt\` VARCHAR(40) NOT NULL, \`updatedAt\` VARCHAR(40) NOT NULL,
     PRIMARY KEY (\`id\`), KEY \`idx_items_record\` (\`recordId\`,\`sortOrder\`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
   `CREATE TABLE IF NOT EXISTS \`dictionary\` (
@@ -326,6 +328,27 @@ export class MysqlStorageService implements OnModuleInit, OnModuleDestroy {
   private async ensureTables() {
     for (const ddl of DDL_STATEMENTS) {
       await this.pool!.query(ddl);
+    }
+    // 列迁移：为已存在的 items 表补充 customerSatisfied 列（DDL 的 CREATE IF NOT EXISTS 不会改旧表）
+    await this.ensureItemColumn('customerSatisfied', 'TINYINT(1) NOT NULL DEFAULT 0');
+  }
+
+  /**
+   * 幂等列迁移：检查 items 表是否含指定列，缺失则 ALTER TABLE ADD COLUMN
+   */
+  private async ensureItemColumn(col: string, ddl: string) {
+    try {
+      const [cols] = await this.pool!.query(
+        'SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?',
+        [this.database, 'items'],
+      );
+      const names = new Set((cols as any[]).map((c) => c.COLUMN_NAME));
+      if (!names.has(col)) {
+        await this.pool!.query(`ALTER TABLE \`items\` ADD COLUMN \`${col}\` ${ddl}`);
+        this.logger.log(`[MysqlStorage] 已为 items 表补充列 ${col}`);
+      }
+    } catch (e: any) {
+      this.logger.warn(`[MysqlStorage] 检查/补充 items 列 ${col} 失败: ${e.message}`);
     }
   }
 
@@ -852,7 +875,9 @@ function rowToItem(r: any): DutyItem {
     content: r.content ?? '', acceptTime: r.acceptTime ?? null, endTime: r.endTime ?? null,
     customerName: r.customerName ?? null, customerPhone: r.customerPhone ?? null,
     customerAddress: r.customerAddress ?? null, handler: r.handler ?? null, result: r.result ?? null,
-    isCompleted: !!r.isCompleted, sortOrder: Number(r.sortOrder),
+    isCompleted: !!r.isCompleted,
+    customerSatisfied: !!r.customerSatisfied,
+    sortOrder: Number(r.sortOrder),
     createdAt: r.createdAt, updatedAt: r.updatedAt,
   };
 }
