@@ -145,6 +145,10 @@ export class DutyRecordDto {
   otherMatters: string;
   @ApiProperty({ type: [PendingIssueDto], description: '遗留问题（逐条确认解决）' })
   pendingIssues: PendingIssueDto[];
+  @ApiProperty({ example: [3, 5], description: '实际值班人员 user.id（空=回退排班名单）' })
+  dutyOfficerIds: number[];
+  @ApiProperty({ example: ['张三', '李四'], description: '值班人员名单（实际优先，未设置则排班名单）' })
+  dutyOfficers: string[];
   @ApiProperty({ example: null, nullable: true })
   lockedAt: string | null;
   @ApiProperty({ example: null, nullable: true })

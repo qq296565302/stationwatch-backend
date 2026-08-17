@@ -37,6 +37,10 @@ export interface User {
   isActive: boolean;
   lastLoginAt: string | null;
   lastLoginIp: string | null;
+  /** 是否仍在使用默认密码（org 灌库/管理员重置后为 true，用户主动改密后为 false） */
+  mustChangePassword: boolean;
+  /** 上次"提示修改默认密码"的时间（ISO 串），用于控制提醒频率（一周内不重复提醒）；null=从未提醒 */
+  passwordPromptedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -60,6 +64,8 @@ export interface DutyRecord {
   hasPending: boolean;
   otherMatters: string;
   pendingIssues: string;
+  /** 实际值班人员（逗号分隔 user.id；null=未设置，展示时回退排班名单） */
+  dutyOfficerIds: string | null;
   lockedAt: string | null;
   lockedBy: number | null;
   createdAt: string;

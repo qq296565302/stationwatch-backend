@@ -38,11 +38,38 @@ export class AuthService {
     user.lastLoginIp = ip ?? null;
     this.storage.saveUser(user);
 
+    // 判断是否该提示修改默认密码（温和提醒，一周内不重复；admin 不提示）
+    const shouldPromptPasswordChange = this.markPasswordPrompt(user);
+
     return {
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken,
       user: this.sanitizeUser(user),
+      shouldPromptPasswordChange,
     };
+  }
+
+  /**
+   * 判断并记录"是否该提示修改默认密码"：
+   * - admin 永不提示；
+   * - 仅当用户仍在使用默认密码（mustChangePassword=true）时考虑；
+   * - 首次提醒（passwordPromptedAt 为空）或距上次提醒超过 7 天 → 返回 true 并更新提醒时间；
+   * - 7 天内的再次登录 → 返回 false，不重复打扰。
+   */
+  private markPasswordPrompt(user: any): boolean {
+    // admin 不参与默认密码提醒
+    if (user.role === 'admin') return false;
+    if (!user.mustChangePassword) return false;
+
+    const now = Date.now();
+    const last = user.passwordPromptedAt ? Date.parse(user.passwordPromptedAt) : NaN;
+    // 从未提醒，或距上次提醒已超过 7 天 → 该提醒
+    if (isNaN(last) || now - last >= 7 * 24 * 3600 * 1000) {
+      user.passwordPromptedAt = this.storage.now();
+      this.storage.saveUser(user);
+      return true;
+    }
+    return false;
   }
 
   async refresh(refreshToken: string) {
@@ -98,6 +125,9 @@ export class AuthService {
     if (!ok) throw new BusinessException(BusinessCode.PARAM_INVALID, '原密码错误');
 
     user.passwordHash = await this.storage.hashPassword(newPassword);
+    // 用户已主动修改密码：清除"需改默认密码"标记及上次提醒时间
+    user.mustChangePassword = false;
+    user.passwordPromptedAt = null;
     user.updatedAt = this.storage.now();
     this.storage.saveUser(user);
 

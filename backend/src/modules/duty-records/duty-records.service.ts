@@ -27,6 +27,15 @@ import {
 /** 单条记录工单数隐藏上限（安全阀）：日常填报无限制，仅防极端情况 */
 const MAX_ITEMS_PER_RECORD = 1000;
 
+/** 实际值班人员序列化：number[] → 逗号分隔串（空/null → null，表示未设置、展示回退排班） */
+function serializeOfficerIds(ids?: number[]): string | null {
+  return ids && ids.length ? ids.join(',') : null;
+}
+/** 实际值班人员解析：逗号分隔串 → number[] */
+function parseOfficerIds(str?: string | null): number[] {
+  return str ? str.split(',').map(Number).filter(Boolean) : [];
+}
+
 @Injectable()
 export class DutyRecordsService {
   private readonly logger = new Logger(DutyRecordsService.name);
@@ -92,6 +101,15 @@ export class DutyRecordsService {
 
     const now = this.storage.now();
 
+    // 实际值班人员（换班后按实际填写）：仅校验成员存在，不强制本所（允许跨站顶班）
+    if (dto.dutyOfficerIds !== undefined) {
+      for (const id of dto.dutyOfficerIds) {
+        if (!this.storage.getUser(id)) {
+          throw new BusinessException(BusinessCode.PARAM_INVALID, `值班人员 ID ${id} 不存在`);
+        }
+      }
+    }
+
     // 查找现有记录（同站同一天）
     let record = this.storage.getRecords().find(
       r => r.stationId === dto.stationId && r.recordDate === dto.recordDate,
@@ -115,6 +133,21 @@ export class DutyRecordsService {
           mergePendingIssues(record.pendingIssues, dto.pendingIssues),
         );
       }
+      // 实际值班人员：每次提交为完整表单，未传则保持原值
+      if (dto.dutyOfficerIds !== undefined) {
+        // 保护已有实际人员：新建补录时前端会预填「当天排班默认名单」，若新提交恰为该默认值
+        // （即用户未手动调整），不覆盖记录里已有的实际值班人员，避免预填推断值污染真实数据
+        const submitted = [...dto.dutyOfficerIds].sort((a, b) => a - b);
+        const scheduled = this.schedule
+          .getDutyOfficersOn(dto.recordDate, dto.stationId)
+          .map(o => o.id)
+          .sort((a, b) => a - b);
+        const isScheduledDefault =
+          submitted.length === scheduled.length && submitted.every((id, i) => id === scheduled[i]);
+        if (!(record.dutyOfficerIds && isScheduledDefault)) {
+          record.dutyOfficerIds = serializeOfficerIds(dto.dutyOfficerIds);
+        }
+      }
     } else {
       // 新建
       const newId = this.storage.nextIdOf('record');
@@ -131,6 +164,7 @@ export class DutyRecordsService {
         hasPending: false,
         otherMatters: dto.otherMatters || '',
         pendingIssues: serializePendingIssues(textToIssues(dto.pendingIssues || '')),
+        dutyOfficerIds: serializeOfficerIds(dto.dutyOfficerIds),
         lockedAt: null,
         lockedBy: null,
         createdAt: now,
@@ -283,6 +317,15 @@ export class DutyRecordsService {
         mergePendingIssues(r.pendingIssues, dto.pendingIssues),
       );
     }
+    // 实际值班人员：未传则保持原值
+    if (dto.dutyOfficerIds !== undefined) {
+      for (const id of dto.dutyOfficerIds) {
+        if (!this.storage.getUser(id)) {
+          throw new BusinessException(BusinessCode.PARAM_INVALID, `值班人员 ID ${id} 不存在`);
+        }
+      }
+      r.dutyOfficerIds = serializeOfficerIds(dto.dutyOfficerIds);
+    }
     r.hasPending = hasUnresolved(parsePendingIssues(r.pendingIssues));
     r.updatedAt = this.storage.now();
     this.storage.saveRecord(r);
@@ -345,8 +388,14 @@ export class DutyRecordsService {
     const items = this.storage.getItemsByRecord(r.id);
     const station = this.storage.getStation(r.stationId);
     const creator = this.storage.getUser(r.creatorId);
-    // 值班员 = 当天该站点排班名单（按 recordDate + stationId 从值班表取，未配置排班时为空）
-    const dutyOfficers = this.schedule.getDutyOfficersOn(r.recordDate, r.stationId).map(o => o.realName);
+    // 值班员 = 实际填写人员优先（换班后按实际）；未设置时回退当天该站点排班名单
+    const officerIds = parseOfficerIds(r.dutyOfficerIds);
+    const actualOfficers = officerIds
+      .map(id => this.storage.getUser(id)?.realName)
+      .filter((n): n is string => !!n);
+    const dutyOfficers = actualOfficers.length
+      ? actualOfficers
+      : this.schedule.getDutyOfficersOn(r.recordDate, r.stationId).map(o => o.realName);
     // 遗留问题统一出口：解析为数组并权威重算 hasPending（存储层原样透传字符串）
     const pending = parsePendingIssues(r.pendingIssues);
     return {
@@ -359,6 +408,7 @@ export class DutyRecordsService {
         ? { id: creator.id, username: creator.username, realName: creator.realName }
         : null,
       dutyOfficers,
+      dutyOfficerIds: officerIds,
     };
   }
 
@@ -368,8 +418,9 @@ export class DutyRecordsService {
   }
 }
 
-export interface DutyRecordDetail extends Omit<DutyRecord, 'pendingIssues'> {
+export interface DutyRecordDetail extends Omit<DutyRecord, 'pendingIssues' | 'dutyOfficerIds'> {
   pendingIssues: PendingIssue[];
+  dutyOfficerIds: number[];
   items: DutyItem[];
   station: { id: number; name: string; code: string } | null;
   creator: { id: number; username: string; realName: string } | null;

@@ -61,6 +61,8 @@ export function ensureDemoUsers(storage: StorageService): boolean {
       isActive: true,
       lastLoginAt: null,
       lastLoginIp: null,
+      mustChangePassword: true, // 默认密码，需改密
+      passwordPromptedAt: null,
       createdAt: now,
       updatedAt: now,
     });
@@ -109,6 +111,8 @@ export function seedInitialData(storage: StorageService) {
       isActive: true,
       lastLoginAt: null,
       lastLoginIp: null,
+      mustChangePassword: false, // admin 不强制改密
+      passwordPromptedAt: null,
       createdAt: now,
       updatedAt: now,
     },
@@ -123,6 +127,8 @@ export function seedInitialData(storage: StorageService) {
       isActive: true,
       lastLoginAt: null,
       lastLoginIp: null,
+      mustChangePassword: true, // 默认密码，需改密
+      passwordPromptedAt: null,
       createdAt: now,
       updatedAt: now,
     },
@@ -163,6 +169,8 @@ export function seedInitialData(storage: StorageService) {
       isActive: true,
       lastLoginAt: null,
       lastLoginIp: null,
+      mustChangePassword: true, // 统一默认密码，需改密
+      passwordPromptedAt: null,
       createdAt: now,
       updatedAt: now,
     };

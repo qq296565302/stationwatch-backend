@@ -82,6 +82,10 @@ export class UpsertDutyRecordDto {
   @ApiProperty({ example: '2 号变压器待维修', required: false, description: '遗留问题（多行文本，每行一条；已解决条目由后端合并保留，不可删除）' })
   @IsOptional() @IsString() @MaxLength(2000, { message: '遗留问题不能超过 2000 字' })
   pendingIssues?: string;
+
+  @ApiProperty({ example: [3, 5, 8], required: false, description: '实际值班人员 user.id 列表（换班后按实际填写；为空则展示时回退排班名单）' })
+  @IsOptional() @IsArray() @IsInt({ each: true })
+  dutyOfficerIds?: number[];
 }
 
 export class UpdateDutyRecordDto {
@@ -100,6 +104,10 @@ export class UpdateDutyRecordDto {
   @ApiProperty({ required: false, description: '遗留问题（多行文本，每行一条；已解决条目由后端合并保留，不可删除）' })
   @IsOptional() @IsString() @MaxLength(2000, { message: '遗留问题不能超过 2000 字' })
   pendingIssues?: string;
+
+  @ApiProperty({ example: [3, 5, 8], required: false, description: '实际值班人员 user.id 列表（换班后按实际填写；为空则展示时回退排班名单）' })
+  @IsOptional() @IsArray() @IsInt({ each: true })
+  dutyOfficerIds?: number[];
 }
 
 export class QueryDutyRecordDto {

@@ -129,6 +129,8 @@ export class UsersService {
       isActive: true,
       lastLoginAt: null,
       lastLoginIp: null,
+      mustChangePassword: true, // 新建账号默认要求首次登录修改密码
+      passwordPromptedAt: null,
       createdAt: now,
       updatedAt: now,
     };
@@ -267,6 +269,9 @@ export class UsersService {
       }
     }
     user.passwordHash = await this.storage.hashPassword(newPassword);
+    // 管理员重置密码后，该账号需在下次登录时提示修改（避免长期使用管理员设定的临时密码）
+    user.mustChangePassword = true;
+    user.passwordPromptedAt = null;
     user.updatedAt = this.storage.now();
     this.storage.saveUser(user);
     this.storage.deleteRefreshToken(id);

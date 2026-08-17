@@ -55,12 +55,13 @@ const STATION_COLS = [
 ];
 const USER_COLS = [
   'id', 'username', 'passwordHash', 'realName', 'role', 'stationId', 'districtId',
-  'isActive', 'lastLoginAt', 'lastLoginIp', 'createdAt', 'updatedAt',
+  'isActive', 'lastLoginAt', 'lastLoginIp', 'mustChangePassword', 'passwordPromptedAt',
+  'createdAt', 'updatedAt',
 ];
 const RECORD_COLS = [
   'id', 'recordDate', 'stationId', 'weather', 'weatherLabel', 'creatorId', 'status',
   'itemCount', 'completedCount', 'hasPending', 'otherMatters', 'pendingIssues',
-  'lockedAt', 'lockedBy', 'createdAt', 'updatedAt',
+  'dutyOfficerIds', 'lockedAt', 'lockedBy', 'createdAt', 'updatedAt',
 ];
 const ITEM_COLS = [
   'id', 'recordId', 'businessType', 'content', 'acceptTime', 'endTime', 'customerName',
@@ -99,6 +100,8 @@ const DDL_STATEMENTS: string[] = [
     \`realName\` VARCHAR(100) NOT NULL, \`role\` VARCHAR(20) NOT NULL,
     \`stationId\` INT NULL, \`districtId\` INT NULL, \`isActive\` TINYINT(1) NOT NULL DEFAULT 1,
     \`lastLoginAt\` VARCHAR(40) NULL, \`lastLoginIp\` VARCHAR(45) NULL,
+    \`mustChangePassword\` TINYINT(1) NOT NULL DEFAULT 0,
+    \`passwordPromptedAt\` VARCHAR(40) NULL,
     \`createdAt\` VARCHAR(40) NOT NULL, \`updatedAt\` VARCHAR(40) NOT NULL,
     PRIMARY KEY (\`id\`), UNIQUE KEY \`uk_users_username\` (\`username\`),
     KEY \`idx_users_station\` (\`stationId\`), KEY \`idx_users_district\` (\`districtId\`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
@@ -109,6 +112,7 @@ const DDL_STATEMENTS: string[] = [
     \`itemCount\` INT NOT NULL DEFAULT 0, \`completedCount\` INT NOT NULL DEFAULT 0,
     \`hasPending\` TINYINT(1) NOT NULL DEFAULT 0,
     \`otherMatters\` TEXT NULL, \`pendingIssues\` TEXT NULL,
+    \`dutyOfficerIds\` VARCHAR(100) NULL DEFAULT NULL,
     \`lockedAt\` VARCHAR(40) NULL, \`lockedBy\` INT NULL,
     \`createdAt\` VARCHAR(40) NOT NULL, \`updatedAt\` VARCHAR(40) NOT NULL,
     PRIMARY KEY (\`id\`), KEY \`idx_records_station_date\` (\`stationId\`,\`recordDate\`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
@@ -249,6 +253,11 @@ export class MysqlStorageService implements OnModuleInit, OnModuleDestroy {
           this.logger.log('[MysqlStorage] 已迁移遗留问题为逐条 JSON 格式（保留已解决条目）');
           await this.flush();
         }
+        // 一次性回填"需改默认密码"标记：旧库的非 admin 账号视为仍用默认密码（功能首次引入时执行一次）
+        if (this.backfillPasswordChangeFlag()) {
+          this.logger.log('[MysqlStorage] 已为旧账号回填"需改默认密码"标记 mustChangePassword');
+          await this.flush();
+        }
       }
       this.logger.log(
         `[MysqlStorage] 已连接 ${this.database}，stations=${this.stations.size}, users=${this.users.size}, records=${this.records.size}, items=${this.items.size}`,
@@ -331,6 +340,30 @@ export class MysqlStorageService implements OnModuleInit, OnModuleDestroy {
     }
     // 列迁移：为已存在的 items 表补充 customerSatisfied 列（DDL 的 CREATE IF NOT EXISTS 不会改旧表）
     await this.ensureItemColumn('customerSatisfied', 'TINYINT(1) NOT NULL DEFAULT 0');
+    // 为已存在的 records 表补充 dutyOfficerIds 列（实际值班人员）
+    await this.ensureRecordColumn('dutyOfficerIds', 'VARCHAR(100) NULL DEFAULT NULL');
+    // 为已存在的 users 表补充"是否需改默认密码"及"上次提醒时间"列
+    await this.ensureUserColumn('mustChangePassword', 'TINYINT(1) NOT NULL DEFAULT 0');
+    await this.ensureUserColumn('passwordPromptedAt', 'VARCHAR(40) NULL');
+  }
+
+  /**
+   * 幂等列迁移：检查 users 表是否含指定列，缺失则 ALTER TABLE ADD COLUMN
+   */
+  private async ensureUserColumn(col: string, ddl: string) {
+    try {
+      const [cols] = await this.pool!.query(
+        'SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?',
+        [this.database, 'users'],
+      );
+      const names = new Set((cols as any[]).map((c) => c.COLUMN_NAME));
+      if (!names.has(col)) {
+        await this.pool!.query(`ALTER TABLE \`users\` ADD COLUMN \`${col}\` ${ddl}`);
+        this.logger.log(`[MysqlStorage] 已为 users 表补充列 ${col}`);
+      }
+    } catch (e: any) {
+      this.logger.warn(`[MysqlStorage] 检查/补充 users 列 ${col} 失败: ${e.message}`);
+    }
   }
 
   /**
@@ -349,6 +382,25 @@ export class MysqlStorageService implements OnModuleInit, OnModuleDestroy {
       }
     } catch (e: any) {
       this.logger.warn(`[MysqlStorage] 检查/补充 items 列 ${col} 失败: ${e.message}`);
+    }
+  }
+
+  /**
+   * 幂等列迁移：检查 records 表是否含指定列，缺失则 ALTER TABLE ADD COLUMN
+   */
+  private async ensureRecordColumn(col: string, ddl: string) {
+    try {
+      const [cols] = await this.pool!.query(
+        'SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?',
+        [this.database, 'records'],
+      );
+      const names = new Set((cols as any[]).map((c) => c.COLUMN_NAME));
+      if (!names.has(col)) {
+        await this.pool!.query(`ALTER TABLE \`records\` ADD COLUMN \`${col}\` ${ddl}`);
+        this.logger.log(`[MysqlStorage] 已为 records 表补充列 ${col}`);
+      }
+    } catch (e: any) {
+      this.logger.warn(`[MysqlStorage] 检查/补充 records 列 ${col} 失败: ${e.message}`);
     }
   }
 
@@ -480,6 +532,35 @@ export class MysqlStorageService implements OnModuleInit, OnModuleDestroy {
     });
     if (ensureDemoUsers(this as any)) changed = true;
     return changed;
+  }
+
+  /**
+   * 一次性回填"需改默认密码"标记（幂等，仅功能首次引入时执行一次）：
+   * 旧库的非 admin 账号均视为仍在使用默认密码，置 mustChangePassword=true；
+   * 完成一次后通过 system_configs 写入标记，之后不再重复回填（避免覆盖用户已改的密码标记）。
+   */
+  private backfillPasswordChangeFlag(): boolean {
+    // 已有标记说明此前已回填过，直接跳过
+    if (this.systemConfigs.has('migration.password_change_flag')) {
+      return false;
+    }
+    let changed = false;
+    const now = this.now();
+    this.users.forEach((u) => {
+      if (u.role !== Role.ADMIN && !u.mustChangePassword) {
+        u.mustChangePassword = true;
+        changed = true;
+      }
+    });
+    // 无论是否有用户被标记，都写入迁移完成标记（避免每次启动重复检查）
+    this.systemConfigs.set('migration.password_change_flag', {
+      configKey: 'migration.password_change_flag',
+      configValue: '1',
+      description: '是否已回填"需改默认密码"标记（1=已回填）',
+      updatedBy: 1,
+      updatedAt: now,
+    });
+    return changed || true;
   }
 
   /**
@@ -855,6 +936,8 @@ function rowToUser(r: any): User {
     districtId: r.districtId != null ? Number(r.districtId) : null,
     isActive: !!r.isActive,
     lastLoginAt: r.lastLoginAt ?? null, lastLoginIp: r.lastLoginIp ?? null,
+    mustChangePassword: r.mustChangePassword != null ? !!r.mustChangePassword : false,
+    passwordPromptedAt: r.passwordPromptedAt ?? null,
     createdAt: r.createdAt, updatedAt: r.updatedAt,
   };
 }
@@ -865,6 +948,7 @@ function rowToRecord(r: any): DutyRecord {
     status: r.status, itemCount: Number(r.itemCount), completedCount: Number(r.completedCount),
     hasPending: !!r.hasPending, otherMatters: r.otherMatters ?? '',
     pendingIssues: r.pendingIssues ?? '',
+    dutyOfficerIds: r.dutyOfficerIds ?? null,
     lockedAt: r.lockedAt ?? null, lockedBy: r.lockedBy != null ? Number(r.lockedBy) : null,
     createdAt: r.createdAt, updatedAt: r.updatedAt,
   };

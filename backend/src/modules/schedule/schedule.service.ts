@@ -102,6 +102,30 @@ export class ScheduleService {
         seen.add(id);
       }
     }
+    // 固化历史记录值班员快照：保存新排班前，先按「旧排班」把该站各历史记录的实际值班员落库，
+    // 仅对未填写实际人员（dutyOfficerIds 为空）的记录生效，已人工填写的不覆盖。
+    // 否则历史记录展示时会用最新排班回算当天人员，导致改排班后历史值班员漂移。
+    const oldView = this.getConfig(dto.stationId);
+    const oldStart = oldView.configured ? oldView.startDate : null;
+    if (oldStart && oldView.groups.length) {
+      const oldStartUTC = parseUTC(oldStart);
+      const oldCycle = oldView.cycleDays;
+      const oldGroups = oldView.groups;
+      this.storage
+        .getRecords()
+        .filter(r => r.stationId === dto.stationId && !r.dutyOfficerIds)
+        .forEach(r => {
+          const diffDays = Math.round((parseUTC(r.recordDate) - oldStartUTC) / MS_DAY);
+          const idx = ((diffDays % oldCycle) + oldCycle) % oldCycle; // 负数安全（排班起始日之前）
+          const g = oldGroups[idx % oldGroups.length];
+          if (g && g.members.length) {
+            r.dutyOfficerIds = g.members.map(m => m.id).join(',');
+            r.updatedAt = this.storage.now();
+            this.storage.saveRecord(r);
+          }
+        });
+    }
+
     this.storage.saveSystemConfig({
       configKey: scheduleKey(dto.stationId),
       configValue: JSON.stringify({ startDate: dto.startDate, cycleDays: dto.cycleDays, groups: dto.groups }),
