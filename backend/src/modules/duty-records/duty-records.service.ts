@@ -37,6 +37,20 @@ function parseOfficerIds(str?: string | null): number[] {
   return str ? str.split(',').map(Number).filter(Boolean) : [];
 }
 
+/**
+ * 值班班次归属日期 YYYY-MM-DD。
+ * 班次为「当日 08:30 ~ 次日 08:30」：当前时刻在 00:00~08:30 之间时，归属**前一天**班次。
+ * 与前端 utils/orderTimeout.js 的 getShiftDateISO 语义一致，保证「今日值班」口径统一。
+ */
+function getShiftDateISO(): string {
+  const d = new Date();
+  const h = d.getHours();
+  const m = d.getMinutes();
+  if (h < 8 || (h === 8 && m < 30)) d.setDate(d.getDate() - 1);
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
 @Injectable()
 export class DutyRecordsService {
   private readonly logger = new Logger(DutyRecordsService.name);
@@ -292,7 +306,8 @@ export class DutyRecordsService {
 
   async today(user: UserPayload, stationId?: number): Promise<DutyRecordDetail | null> {
     this.autoLockExpired();
-    const today = dayjs().format('YYYY-MM-DD');
+    // 班次为当日08:30~次日08:30，凌晨(<08:30)归属前一天班次，与前端「今日值班」口径一致
+    const today = getShiftDateISO();
     // admin 切站时用传入 stationId，其余角色固定本所；区县管理员缺省回退本区县首站
     const sid = this.scope.resolveStationId(user, stationId);
     if (!sid) return null;
