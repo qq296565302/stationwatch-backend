@@ -23,9 +23,13 @@ export class ScheduleGroupDto {
   @IsInt() @Min(1)
   sortOrder: number;
 
-  @ApiProperty({ example: [4, 5, 6], description: '值班员用户 ID 列表' })
-  @IsArray() @ArrayNotEmpty() @IsInt({ each: true })
+  @ApiProperty({ example: [4, 5, 6], description: '值班员用户 ID 列表（可为空，空组到岗时无人值班）' })
+  @IsArray() @IsInt({ each: true })
   memberIds: number[];
+
+  @ApiProperty({ example: 4, description: '值班间隔天数（该组每几天值一次班，缺省=轮换周期天数）' })
+  @IsOptional() @IsInt() @Min(1) @Max(60)
+  intervalDays?: number;
 }
 
 export class UpdateScheduleDto {
@@ -37,7 +41,7 @@ export class UpdateScheduleDto {
   @IsString() @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'startDate 须为 YYYY-MM-DD' })
   startDate: string;
 
-  @ApiProperty({ example: 5, description: '轮换周期天数（须与组数一致）' })
+  @ApiProperty({ example: 5, description: '轮换周期天数（作为各组的缺省值班间隔）' })
   @IsInt() @Min(1) @Max(60)
   cycleDays: number;
 

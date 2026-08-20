@@ -19,6 +19,8 @@ interface ScheduleGroup {
   name: string;
   sortOrder: number;
   memberIds: number[];
+  /** 值班间隔天数：该组每几天值一次班，缺省=cycleDays（保持旧的「N组=N天」等间隔行为） */
+  intervalDays?: number;
 }
 interface ScheduleConfig {
   startDate: string;
@@ -61,6 +63,7 @@ export class ScheduleService {
       .map(g => ({
         name: g.name,
         sortOrder: g.sortOrder,
+        intervalDays: g.intervalDays ?? cfg.cycleDays ?? DEFAULT_CYCLE_DAYS,
         members: (g.memberIds || [])
           .map(id => this.storage.getUser(id))
           .filter((u): u is NonNullable<typeof u> => !!u && (u.role === Role.DUTY_OFFICER || u.role === Role.SUPERVISOR))
@@ -77,12 +80,16 @@ export class ScheduleService {
 
   /** 保存排班配置（admin 可写任意站点，supervisor 只能写本所，controller 把关角色） */
   updateConfig(dto: UpdateScheduleDto, user: UserPayload) {
-    if (dto.groups.length !== dto.cycleDays) {
-      throw new BusinessException(BusinessCode.PARAM_INVALID, '轮换周期必须与班组数量一致');
-    }
     // 非管理员只能维护本所排班
     if (user.role !== Role.ADMIN && dto.stationId !== user.stationId) {
       throw new BusinessException(BusinessCode.FORBIDDEN, '无权操作其他站点的排班');
+    }
+    // 每个组的间隔天数（缺省用周期天数）须在合法范围内，避免出现 0 或过大的异常排班
+    for (const g of dto.groups) {
+      const iv = g.intervalDays ?? dto.cycleDays;
+      if (!Number.isInteger(iv) || iv < 1 || iv > 60) {
+        throw new BusinessException(BusinessCode.PARAM_INVALID, `「${g.name}」的值班间隔天数须为 1-60 的整数`);
+      }
     }
     const seen = new Set<number>();
     for (const g of dto.groups) {
@@ -110,25 +117,33 @@ export class ScheduleService {
     if (oldStart && oldView.groups.length) {
       const oldStartUTC = parseUTC(oldStart);
       const oldCycle = oldView.cycleDays;
-      const oldGroups = oldView.groups;
+      const oldGroups = [...oldView.groups]
+        .sort((a, b) => a.sortOrder - b.sortOrder)
+        .map((g, idx) => ({ ...g, iv: g.intervalDays ?? oldCycle, phase: idx }));
       this.storage
         .getRecords()
         .filter(r => r.stationId === dto.stationId && !r.dutyOfficerIds)
         .forEach(r => {
           const diffDays = Math.round((parseUTC(r.recordDate) - oldStartUTC) / MS_DAY);
-          const idx = ((diffDays % oldCycle) + oldCycle) % oldCycle; // 负数安全（排班起始日之前）
-          const g = oldGroups[idx % oldGroups.length];
-          if (g && g.members.length) {
-            r.dutyOfficerIds = g.members.map(m => m.id).join(',');
+          // 按旧配置各组的独立间隔 + 错开相位回填当天值班员
+          const onDuty = oldGroups.filter(g => diffDays >= g.phase && (diffDays - g.phase) % g.iv === 0);
+          const ids = onDuty.flatMap(g => g.members.map(m => m.id));
+          if (ids.length) {
+            r.dutyOfficerIds = ids.join(',');
             r.updatedAt = this.storage.now();
             this.storage.saveRecord(r);
           }
         });
     }
 
+    // 固化各组的间隔天数：缺省用周期天数，保证历史配置无 intervalDays 时也能正确回退
+    const groups = dto.groups.map(g => ({
+      ...g,
+      intervalDays: g.intervalDays ?? dto.cycleDays,
+    }));
     this.storage.saveSystemConfig({
       configKey: scheduleKey(dto.stationId),
-      configValue: JSON.stringify({ startDate: dto.startDate, cycleDays: dto.cycleDays, groups: dto.groups }),
+      configValue: JSON.stringify({ startDate: dto.startDate, cycleDays: dto.cycleDays, groups }),
       description: `值班排班配置（站点${dto.stationId}）`,
       updatedBy: user.id,
       updatedAt: this.storage.now(),
@@ -136,32 +151,51 @@ export class ScheduleService {
     return this.getConfig(dto.stationId);
   }
 
-  /** 生成排班表：from（默认今天）起 days 天，按周期循环（按站点） */
+  /**
+   * 生成排班表：from（默认今天）起 days 天（按站点）。
+   * 排班规则（每组独立间隔 + 组间自动错开）：
+   *   第 i 组（按 sortOrder 从 0 计数）的值班日为
+   *     `(date - startDate) === i + k * intervalDays_i`，即相位 = 组序号，之后每 intervalDays 天一次。
+   * - 当所有组间隔相同时，正好「每天一组依次轮换」，各组间隔一致、无休息、无重叠（修复默认配置全休息的回归）。
+   * - 当各组间隔不同时，组按序号错开相位，某天可能出现单个组、多个组（周期重合）或无组（休息）。
+   */
   getTable(from?: string, days?: number, stationId?: number) {
     const cfg = this.getConfig(stationId ?? 0);
     if (!cfg.configured || cfg.groups.length === 0) return [];
     const startUTC = parseUTC(cfg.startDate as string);
     const fromUTC = parseUTC(from || todayLocal());
     const n = Math.min(Math.max(days ?? 7, 1), 90);
-    const groups = [...cfg.groups].sort((a, b) => a.sortOrder - b.sortOrder);
+    const sorted = [...cfg.groups].sort((a, b) => a.sortOrder - b.sortOrder);
+    // 相位 = 组序号，让各组在起始日起依次错开，避免所有组挤在同一天
+    const groups = sorted.map((g, idx) => ({
+      ...g,
+      iv: g.intervalDays ?? cfg.cycleDays,
+      phase: idx,
+    }));
     const rows: {
       date: string;
       weekday: string;
       groupIndex: number;
       groupName: string;
       members: { id: number; realName: string; username: string }[];
+      groups: { name: string; intervalDays: number; members: { id: number; realName: string; username: string }[] }[];
     }[] = [];
     for (let i = 0; i < n; i++) {
       const dateUTC = fromUTC + i * MS_DAY;
       const diffDays = Math.round((dateUTC - startUTC) / MS_DAY);
-      const idx = ((diffDays % cfg.cycleDays) + cfg.cycleDays) % cfg.cycleDays; // 负数安全
-      const g = groups[idx % groups.length];
+      const onDuty = groups.filter(g => diffDays >= g.phase && (diffDays - g.phase) % g.iv === 0);
+      const primary = onDuty[0];
       rows.push({
         date: toISO(dateUTC),
         weekday: WEEKDAYS[new Date(dateUTC).getUTCDay()],
-        groupIndex: idx,
-        groupName: g?.name ?? `第${idx + 1}组`,
-        members: g?.members ?? [],
+        groupIndex: primary ? (primary.sortOrder ?? 0) : -1,
+        groupName: primary?.name ?? '休息',
+        members: primary?.members ?? [],
+        groups: onDuty.map(g => ({
+          name: g.name,
+          intervalDays: g.iv,
+          members: g.members,
+        })),
       });
     }
     return rows;
