@@ -75,8 +75,8 @@ const EXPORT_COLS = [
   'status', 'errorMessage', 'createdAt',
 ];
 const LOG_COLS = [
-  'id', 'userId', 'username', 'action', 'targetType', 'targetId', 'ipAddress', 'userAgent',
-  'details', 'statusCode', 'durationMs', 'createdAt',
+  'id', 'userId', 'username', 'action', 'targetType', 'targetId', 'stationId', 'ipAddress',
+  'userAgent', 'details', 'statusCode', 'durationMs', 'createdAt',
 ];
 const TOKEN_COLS = ['userId', 'token', 'expiresAt'];
 
@@ -146,9 +146,9 @@ const DDL_STATEMENTS: string[] = [
   `CREATE TABLE IF NOT EXISTS \`operation_logs\` (
     \`id\` INT NOT NULL, \`userId\` INT NULL, \`username\` VARCHAR(64) NULL,
     \`action\` VARCHAR(100) NOT NULL, \`targetType\` VARCHAR(50) NULL, \`targetId\` INT NULL,
-    \`ipAddress\` VARCHAR(45) NULL, \`userAgent\` VARCHAR(300) NULL, \`details\` TEXT NULL,
+    \`stationId\` INT NULL, \`ipAddress\` VARCHAR(45) NULL, \`userAgent\` VARCHAR(300) NULL, \`details\` TEXT NULL,
     \`statusCode\` INT NULL, \`durationMs\` INT NULL, \`createdAt\` VARCHAR(40) NOT NULL,
-    PRIMARY KEY (\`id\`), KEY \`idx_logs_created\` (\`createdAt\`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+    PRIMARY KEY (\`id\`), KEY \`idx_logs_created\` (\`createdAt\`), KEY \`idx_logs_station\` (\`stationId\`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
   `CREATE TABLE IF NOT EXISTS \`refresh_tokens\` (
     \`userId\` INT NOT NULL, \`token\` VARCHAR(1024) NOT NULL, \`expiresAt\` BIGINT NOT NULL,
     PRIMARY KEY (\`userId\`), KEY \`idx_tokens_expires\` (\`expiresAt\`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
@@ -345,6 +345,8 @@ export class MysqlStorageService implements OnModuleInit, OnModuleDestroy {
     // 为已存在的 users 表补充"是否需改默认密码"及"上次提醒时间"列
     await this.ensureUserColumn('mustChangePassword', 'TINYINT(1) NOT NULL DEFAULT 0');
     await this.ensureUserColumn('passwordPromptedAt', 'VARCHAR(40) NULL');
+    // 为已存在的 operation_logs 表补充 stationId 列（操作日志按站点过滤）
+    await this.ensureLogColumn('stationId', 'INT NULL');
   }
 
   /**
@@ -401,6 +403,25 @@ export class MysqlStorageService implements OnModuleInit, OnModuleDestroy {
       }
     } catch (e: any) {
       this.logger.warn(`[MysqlStorage] 检查/补充 records 列 ${col} 失败: ${e.message}`);
+    }
+  }
+
+  /**
+   * 幂等列迁移：检查 operation_logs 表是否含指定列，缺失则 ALTER TABLE ADD COLUMN
+   */
+  private async ensureLogColumn(col: string, ddl: string) {
+    try {
+      const [cols] = await this.pool!.query(
+        'SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?',
+        [this.database, 'operation_logs'],
+      );
+      const names = new Set((cols as any[]).map((c) => c.COLUMN_NAME));
+      if (!names.has(col)) {
+        await this.pool!.query(`ALTER TABLE \`operation_logs\` ADD COLUMN \`${col}\` ${ddl}`);
+        this.logger.log(`[MysqlStorage] 已为 operation_logs 表补充列 ${col}`);
+      }
+    } catch (e: any) {
+      this.logger.warn(`[MysqlStorage] 检查/补充 operation_logs 列 ${col} 失败: ${e.message}`);
     }
   }
 
@@ -1007,6 +1028,7 @@ function rowToLog(r: any): OperationLog {
     username: r.username ?? null, action: r.action,
     targetType: r.targetType ?? null,
     targetId: r.targetId != null ? Number(r.targetId) : null,
+    stationId: r.stationId != null ? Number(r.stationId) : null,
     ipAddress: r.ipAddress ?? null, userAgent: r.userAgent ?? null,
     details,
     statusCode: r.statusCode != null ? Number(r.statusCode) : null,

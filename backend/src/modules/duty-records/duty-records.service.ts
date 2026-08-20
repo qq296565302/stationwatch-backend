@@ -15,6 +15,7 @@ import { PaginatedResult } from '../../common/types/pagination';
 import { Role } from '../../common/types/role.enum';
 import { ScheduleService } from '../schedule/schedule.service';
 import { ScopeService } from '../../common/scope/scope.service';
+import { LogsService } from '../logs/logs.service';
 import {
   PendingIssue,
   parsePendingIssues,
@@ -46,6 +47,7 @@ export class DutyRecordsService {
     private readonly storage: StorageService,
     private readonly schedule: ScheduleService,
     private readonly scope: ScopeService,
+    private readonly logs: LogsService,
   ) {}
 
   /**
@@ -114,12 +116,12 @@ export class DutyRecordsService {
     let record = this.storage.getRecords().find(
       r => r.stationId === dto.stationId && r.recordDate === dto.recordDate,
     );
+    let isNewRecord = !record;
 
     if (record) {
-      // 已存在：合并
-      if (user.role === Role.DUTY_OFFICER && record.creatorId !== user.id) {
-        throw new BusinessException(BusinessCode.FORBIDDEN, '只能编辑自己创建的记录');
-      }
+      // 已存在：合并。
+      // 值班员在本所范围内可合并/更新记录（站点归属已由上方 canAccessStation 校验），
+      // 不再限制"只能编辑自己创建的记录"，与工单权限、前端 canAddItemToRecord 口径一致
       if (record.status === 'locked' && user.role !== Role.ADMIN) {
         throw new BusinessException(BusinessCode.RECORD_LOCKED, '记录已锁定，无法编辑');
       }
@@ -228,6 +230,33 @@ export class DutyRecordsService {
     record.hasPending = hasUnresolved(parsePendingIssues(record.pendingIssues));
     record.updatedAt = now;
     this.storage.saveRecord(record);
+
+    // 操作日志（展示用真实姓名而非账号）
+    const stationName = station ? station.name : '';
+    const dateLabel = `${record.recordDate} · ${stationName}`.trim();
+    const operatorName = this.storage.getUser(user.id)?.realName || user.username;
+    if (isNewRecord) {
+      this.logs.record({
+        userId: user.id,
+        username: operatorName,
+        action: 'record:create',
+        targetType: 'record',
+        targetId: record.id,
+        stationId: record.stationId,
+        details: { recordDate: record.recordDate, stationLabel: dateLabel },
+      });
+    } else {
+      // 更新时记录变更的工单内容，便于前端展示"更新了记录/工单"
+      this.logs.record({
+        userId: user.id,
+        username: operatorName,
+        action: 'record:update',
+        targetType: 'record',
+        targetId: record.id,
+        stationId: record.stationId,
+        details: { recordDate: record.recordDate, stationLabel: dateLabel },
+      });
+    }
 
     return this.toDetail(record);
   }

@@ -3,12 +3,14 @@ import dayjs = require('dayjs');
 import { StorageService } from '../../storage/storage.service';
 import { UserPayload } from '../../common/types/user-payload';
 import { ScopeService } from '../../common/scope/scope.service';
+import { LogsService } from '../logs/logs.service';
 
 @Injectable()
 export class DashboardService {
   constructor(
     private readonly storage: StorageService,
     private readonly scope: ScopeService,
+    private readonly logs: LogsService,
   ) {}
 
   /**
@@ -59,39 +61,84 @@ export class DashboardService {
     };
   }
 
-  /** 最近活动（按记录最近更新时间倒序，字段结构与前端卡片对齐） */
+  /** 最近活动：基于真实操作日志（谁在几点做了什么），按可见站点过滤、时间倒序 */
   activities(limit: number, user: UserPayload, stationId?: number) {
-    const records = this.scopeRecords(user, stationId);
-    records.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    const visibleIds = new Set(this.scope.visibleStationIds(user));
+    const logs = this.storage
+      .getOperationLogs()
+      .filter(l => {
+        if (l.stationId == null) return false;
+        if (!visibleIds.has(l.stationId)) return false;
+        if (stationId != null && l.stationId !== stationId) return false;
+        return true;
+      })
+      .slice(0, limit);
 
-    return records.slice(0, limit).map(r => {
-      const creator = r.creatorId ? this.storage.getUser(r.creatorId) : null;
-      const station = this.storage.getStation(r.stationId);
-      let type: string;
+    return logs.map(l => {
+      const station = this.storage.getStation(l.stationId!);
+      const stationName = station ? station.name : '';
+      const d = l.details || {};
+      const content = d.content ? `「${String(d.content).slice(0, 20)}」` : '';
+      let type = 'record';
       let action: string;
-      if (r.status === 'locked') {
-        type = 'locked';
-        action = '锁定了值班记录';
-      } else if (r.hasPending) {
-        type = 'warning';
-        action = '记录了遗留问题';
-      } else if (r.itemCount === 0) {
-        type = 'record';
-        action = '创建了值班记录';
-      } else if (r.completedCount === r.itemCount) {
-        type = 'record';
-        action = '完成了全部值班事项';
-      } else {
-        type = 'record';
-        action = '更新了值班记录';
+      let target = stationName;
+
+      switch (l.action) {
+        case 'record:create':
+          type = 'record';
+          action = '创建了值班记录';
+          target = `${d.recordDate || ''}${stationName ? ' · ' + stationName : ''}`;
+          break;
+        case 'record:update':
+          type = 'record';
+          action = '更新了值班记录';
+          target = `${d.recordDate || ''}${stationName ? ' · ' + stationName : ''}`;
+          break;
+        case 'item:create':
+          type = 'record';
+          action = `添加了工单${content}`;
+          target = `${d.recordDate ? d.recordDate + ' · ' : ''}${stationName}`;
+          break;
+        case 'item:complete':
+          type = 'success';
+          action = `完成了工单${content}`;
+          target = stationName;
+          break;
+        case 'item:update':
+          type = 'record';
+          action = `更新了工单${content}`;
+          target = stationName;
+          break;
+        case 'item:uncomplete':
+          type = 'warning';
+          action = `重新打开了工单${content}`;
+          target = stationName;
+          break;
+        case 'item:remove':
+          type = 'warning';
+          action = `删除了工单${content}`;
+          target = stationName;
+          break;
+        case 'export':
+          type = 'export';
+          action = '导出了值班记录';
+          target = `${d.scope || ''}${stationName ? ' · ' + stationName : ''}`;
+          break;
+        default:
+          type = 'record';
+          action = l.action || '执行了操作';
+          target = stationName;
       }
+
+      // 展示操作者：优先按 userId 关联真实姓名，确保历史日志（存账号）也能显示真实姓名
+      const realUser = l.userId != null ? this.storage.getUser(l.userId) : null;
       return {
-        id: r.id,
+        id: l.id,
         type,
-        user: creator?.realName || '未知用户',
+        user: realUser?.realName || l.username || '未知用户',
         action,
-        target: `${r.recordDate}${station ? ' · ' + station.name : ''}`,
-        time: dayjs(r.updatedAt).format('MM-DD HH:mm'),
+        target: target || '—',
+        time: dayjs(l.createdAt).format('MM-DD HH:mm'),
       };
     });
   }

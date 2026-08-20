@@ -141,6 +141,8 @@ export interface OperationLog {
   action: string;
   targetType: string | null;
   targetId: number | null;
+  // 站点归属：用于按用户可见站点范围过滤日志
+  stationId: number | null;
   ipAddress: string | null;
   userAgent: string | null;
   details: any;

@@ -28,7 +28,7 @@ export class DutyItemUpsertDto {
   customerName?: string;
 
   @ApiProperty({ example: '13800138000', required: false, pattern: '^1[3-9]\\d{9}$' })
-  @IsOptional() @IsString() @Matches(/^1[3-9]\d{9}$/, { message: '手机号格式错误' })
+  @IsOptional() @IsString() @Matches(/^(|1[3-9]\d{9})$/, { message: '手机号格式错误' })
   customerPhone?: string;
 
   @ApiProperty({ example: '东郊路 123 号', required: false })

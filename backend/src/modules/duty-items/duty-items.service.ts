@@ -6,6 +6,7 @@ import { BusinessException, BusinessCode } from '../../common/exceptions/busines
 import { CreateDutyItemDto, UpdateDutyItemDto } from './dto/duty-items.dto';
 import { Role } from '../../common/types/role.enum';
 import { ScopeService } from '../../common/scope/scope.service';
+import { LogsService } from '../logs/logs.service';
 
 /** 单条记录工单数隐藏上限（安全阀）：日常填报无限制，仅防极端情况 */
 const MAX_ITEMS_PER_RECORD = 1000;
@@ -17,6 +18,7 @@ export class DutyItemsService {
   constructor(
     private readonly storage: StorageService,
     private readonly scope: ScopeService,
+    private readonly logs: LogsService,
   ) {}
 
   list(recordId: number, user?: UserPayload): DutyItem[] {
@@ -35,7 +37,6 @@ export class DutyItemsService {
       throw new BusinessException(BusinessCode.RECORD_LOCKED, '记录已锁定');
     }
     this.assertStationScope(record, user);
-    this.assertCanEdit(record, user);
 
     const currentCount = this.storage.getItemsByRecord(recordId).length;
     if (currentCount >= MAX_ITEMS_PER_RECORD) {
@@ -66,6 +67,16 @@ export class DutyItemsService {
     // 更新 record 计数
     this.recomputeRecord(recordId);
 
+    this.logs.record({
+      userId: user.id,
+      username: this.storage.getUser(user.id)?.realName || user.username,
+      action: 'item:create',
+      targetType: 'item',
+      targetId: item.id,
+      stationId: record.stationId,
+      details: { recordId, content: item.content || '', businessType: item.businessType || '' },
+    });
+
     return item;
   }
 
@@ -76,7 +87,6 @@ export class DutyItemsService {
       throw new BusinessException(BusinessCode.RECORD_LOCKED, '记录已锁定');
     }
     this.assertStationScope(record, user);
-    this.assertCanEdit(record, user);
     const item = this.storage.getItem(itemId);
     if (!item || item.recordId !== recordId) {
       throw new BusinessException(BusinessCode.NOT_FOUND, '工单不存在');
@@ -96,6 +106,15 @@ export class DutyItemsService {
     this.storage.saveItem(item);
 
     this.recomputeRecord(recordId);
+    this.logs.record({
+      userId: user.id,
+      username: this.storage.getUser(user.id)?.realName || user.username,
+      action: 'item:update',
+      targetType: 'item',
+      targetId: item.id,
+      stationId: record.stationId,
+      details: { recordId, content: item.content || '' },
+    });
     return item;
   }
 
@@ -106,13 +125,21 @@ export class DutyItemsService {
       throw new BusinessException(BusinessCode.RECORD_LOCKED, '记录已锁定');
     }
     this.assertStationScope(record, user);
-    this.assertCanEdit(record, user);
     const item = this.storage.getItem(itemId);
     if (!item || item.recordId !== recordId) {
       throw new BusinessException(BusinessCode.NOT_FOUND, '工单不存在');
     }
     this.storage.deleteItem(itemId);
     this.recomputeRecord(recordId);
+    this.logs.record({
+      userId: user.id,
+      username: this.storage.getUser(user.id)?.realName || user.username,
+      action: 'item:remove',
+      targetType: 'item',
+      targetId: itemId,
+      stationId: record.stationId,
+      details: { recordId, content: item.content || '' },
+    });
     return { ok: true };
   }
 
@@ -123,7 +150,6 @@ export class DutyItemsService {
       throw new BusinessException(BusinessCode.RECORD_LOCKED, '记录已锁定');
     }
     this.assertStationScope(record, user);
-    this.assertCanEdit(record, user);
     const item = this.storage.getItem(itemId);
     if (!item || item.recordId !== recordId) {
       throw new BusinessException(BusinessCode.NOT_FOUND, '工单不存在');
@@ -133,6 +159,15 @@ export class DutyItemsService {
     item.updatedAt = this.storage.now();
     this.storage.saveItem(item);
     this.recomputeRecord(recordId);
+    this.logs.record({
+      userId: user.id,
+      username: this.storage.getUser(user.id)?.realName || user.username,
+      action: 'item:complete',
+      targetType: 'item',
+      targetId: item.id,
+      stationId: record.stationId,
+      details: { recordId, content: item.content || '' },
+    });
     return item;
   }
 
@@ -143,7 +178,6 @@ export class DutyItemsService {
       throw new BusinessException(BusinessCode.RECORD_LOCKED, '记录已锁定');
     }
     this.assertStationScope(record, user);
-    this.assertCanEdit(record, user);
     const item = this.storage.getItem(itemId);
     if (!item || item.recordId !== recordId) {
       throw new BusinessException(BusinessCode.NOT_FOUND, '工单不存在');
@@ -152,6 +186,15 @@ export class DutyItemsService {
     item.updatedAt = this.storage.now();
     this.storage.saveItem(item);
     this.recomputeRecord(recordId);
+    this.logs.record({
+      userId: user.id,
+      username: this.storage.getUser(user.id)?.realName || user.username,
+      action: 'item:uncomplete',
+      targetType: 'item',
+      targetId: item.id,
+      stationId: record.stationId,
+      details: { recordId, content: item.content || '' },
+    });
     return item;
   }
 
@@ -166,13 +209,8 @@ export class DutyItemsService {
     }
   }
 
-  // 值班员只能操作自己创建的记录中的工单（与 duty-records 的"只能编辑自己创建"口径一致）
-  private assertCanEdit(record: any, user: UserPayload) {
-    if (user.role === Role.DUTY_OFFICER && record.creatorId !== user.id) {
-      throw new BusinessException(BusinessCode.FORBIDDEN, '只能操作自己创建记录的工单');
-    }
-  }
-
+  // 值班员在本所范围内可操作任意记录的工单（站点归属由 assertStationScope 保证，
+  // 不再限制"只能操作自己创建的记录"，与前端 canAddItemToRecord 口径一致）
   private recomputeRecord(recordId: number) {
     const record = this.storage.getRecord(recordId);
     if (!record) return;
