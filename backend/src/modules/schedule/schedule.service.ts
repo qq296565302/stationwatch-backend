@@ -117,17 +117,25 @@ export class ScheduleService {
     if (oldStart && oldView.groups.length) {
       const oldStartUTC = parseUTC(oldStart);
       const oldCycle = oldView.cycleDays;
-      const oldGroups = [...oldView.groups]
-        .sort((a, b) => a.sortOrder - b.sortOrder)
-        .map((g, idx) => ({ ...g, iv: g.intervalDays ?? oldCycle, phase: idx }));
+      const oldAll = [...oldView.groups].sort((a, b) => a.sortOrder - b.sortOrder);
+      // 按旧配置的值班间隔分组（多类并行），每类内按 sortOrder 循环
+      const byInterval = new Map<number, typeof oldAll>();
+      for (const g of oldAll) {
+        const iv = g.intervalDays ?? oldCycle;
+        if (!byInterval.has(iv)) byInterval.set(iv, []);
+        byInterval.get(iv)!.push(g);
+      }
+      const oldClasses = [...byInterval.values()];
       this.storage
         .getRecords()
         .filter(r => r.stationId === dto.stationId && !r.dutyOfficerIds)
         .forEach(r => {
           const diffDays = Math.round((parseUTC(r.recordDate) - oldStartUTC) / MS_DAY);
-          // 按旧配置各组的独立间隔 + 错开相位回填当天值班员
-          const onDuty = oldGroups.filter(g => diffDays >= g.phase && (diffDays - g.phase) % g.iv === 0);
-          const ids = onDuty.flatMap(g => g.members.map(m => m.id));
+          // 每天每个类各派一队（类内 teams[diff % len]）
+          const ids = oldClasses.flatMap(teams => {
+            const idx = ((diffDays % teams.length) + teams.length) % teams.length;
+            return teams[idx].members.map(m => m.id);
+          });
           if (ids.length) {
             r.dutyOfficerIds = ids.join(',');
             r.updatedAt = this.storage.now();
@@ -153,11 +161,12 @@ export class ScheduleService {
 
   /**
    * 生成排班表：from（默认今天）起 days 天（按站点）。
-   * 排班规则（每组独立间隔 + 组间自动错开）：
-   *   第 i 组（按 sortOrder 从 0 计数）的值班日为
-   *     `(date - startDate) === i + k * intervalDays_i`，即相位 = 组序号，之后每 intervalDays 天一次。
-   * - 当所有组间隔相同时，正好「每天一组依次轮换」，各组间隔一致、无休息、无重叠（修复默认配置全休息的回归）。
-   * - 当各组间隔不同时，组按序号错开相位，某天可能出现单个组、多个组（周期重合）或无组（休息）。
+   * 排班规则（多类并行轮转）：
+   *   「值班间隔」相同的组属于同一个类（如所有间隔=6 的组构成 6 天类，间隔=4 的组构成 4 天类）。
+   *   每天，每个类各派一支队伍值班；类内队伍按 sortOrder 循环，派出 = teams[diff % teams.length]。
+   *   例：A 类(间隔6, 队伍A1..A6) + B 类(间隔4, 队伍B1..B4)：
+   *     第1天 A1+B1，第2天 A2+B2，…，第5天 A5+B1，第6天 A6+B2，第7天 A1+B3 …
+   *   （每天每类各一队，无休息天；类内队伍按各自数量循环）
    */
   getTable(from?: string, days?: number, stationId?: number) {
     const cfg = this.getConfig(stationId ?? 0);
@@ -165,12 +174,17 @@ export class ScheduleService {
     const startUTC = parseUTC(cfg.startDate as string);
     const fromUTC = parseUTC(from || todayLocal());
     const n = Math.min(Math.max(days ?? 7, 1), 90);
-    const sorted = [...cfg.groups].sort((a, b) => a.sortOrder - b.sortOrder);
-    // 相位 = 组序号，让各组在起始日起依次错开，避免所有组挤在同一天
-    const groups = sorted.map((g, idx) => ({
-      ...g,
-      iv: g.intervalDays ?? cfg.cycleDays,
-      phase: idx,
+    const all = [...cfg.groups].sort((a, b) => a.sortOrder - b.sortOrder);
+    // 按值班间隔分组 → 每个间隔一个「类」，类内队伍按 sortOrder 排序
+    const byInterval = new Map<number, typeof all>();
+    for (const g of all) {
+      const iv = g.intervalDays ?? cfg.cycleDays;
+      if (!byInterval.has(iv)) byInterval.set(iv, []);
+      byInterval.get(iv)!.push(g);
+    }
+    const classes = [...byInterval.entries()].map(([iv, teams]) => ({
+      iv,
+      teams,
     }));
     const rows: {
       date: string;
@@ -182,18 +196,23 @@ export class ScheduleService {
     }[] = [];
     for (let i = 0; i < n; i++) {
       const dateUTC = fromUTC + i * MS_DAY;
+      // 第 i 天（相对 from）对应的全局偏移：起始日起的天数
       const diffDays = Math.round((dateUTC - startUTC) / MS_DAY);
-      const onDuty = groups.filter(g => diffDays >= g.phase && (diffDays - g.phase) % g.iv === 0);
+      // 每个类各派一队：类内 teams[diff % teams.length]
+      const onDuty = classes.map(({ iv, teams }) => {
+        const idx = ((diffDays % teams.length) + teams.length) % teams.length;
+        return teams[idx];
+      }).filter(Boolean);
       const primary = onDuty[0];
       rows.push({
         date: toISO(dateUTC),
         weekday: WEEKDAYS[new Date(dateUTC).getUTCDay()],
         groupIndex: primary ? (primary.sortOrder ?? 0) : -1,
-        groupName: primary?.name ?? '休息',
+        groupName: primary?.name ?? '—',
         members: primary?.members ?? [],
         groups: onDuty.map(g => ({
           name: g.name,
-          intervalDays: g.iv,
+          intervalDays: g.intervalDays ?? cfg.cycleDays,
           members: g.members,
         })),
       });
@@ -201,9 +220,11 @@ export class ScheduleService {
     return rows;
   }
 
-  /** 获取指定日期指定站点的值班人员名单（按排班周期计算），未配置排班时返回空数组 */
+  /** 获取指定日期指定站点的值班人员名单（多类并行：当天所有类各派一队的全部成员），未配置排班时返回空数组 */
   getDutyOfficersOn(date?: string, stationId?: number): Array<{ id: number; realName: string; username: string }> {
     const row = this.getTable(date || todayLocal(), 1, stationId);
-    return row.length ? row[0].members : [];
+    if (!row.length) return [];
+    const allMembers = row[0].groups.flatMap(g => g.members || []);
+    return allMembers;
   }
 }

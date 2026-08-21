@@ -8,15 +8,20 @@
 set -e
 cd "$(dirname "$0")/.."   # 进入 backend 目录
 
-echo "[1/3] 精简 node_modules（仅保留生产依赖）..."
+echo "[0/4] 重新构建（确保 dist 为最新代码）..."
+npm run build
+
+echo "[1/4] 精简 node_modules（仅保留生产依赖）..."
 npm prune --omit=dev
 
-echo "[2/3] 打包部署包..."
+echo "[2/4] 打包部署包..."
 tar czf ../duty-guard-backend.tar.gz \
   dist node_modules package.json package-lock.json .env.production
 
-echo "[3/3] 恢复本地开发依赖..."
+echo "[3/4] 恢复本地开发依赖..."
 npm install
+
+echo "[4/4] 完成"
 
 echo ""
 echo "✅ 部署包已生成：../duty-guard-backend.tar.gz"
