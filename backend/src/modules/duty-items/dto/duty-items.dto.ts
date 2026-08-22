@@ -10,6 +10,18 @@ export class CreateDutyItemDto {
   @IsString()
   content: string;
 
+  @ApiProperty({ example: '08:30', required: false, description: '受理时间，缺省用当前时刻' })
+  @IsOptional() @IsString() @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, { message: '受理时间格式应为 HH:MM' })
+  acceptTime?: string;
+
+  @ApiProperty({ example: '10:15', required: false, description: '完成时间' })
+  @IsOptional() @IsString() @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, { message: '完成时间格式应为 HH:MM' })
+  endTime?: string;
+
+  @ApiProperty({ example: true, required: false })
+  @IsOptional() @IsBoolean()
+  isCompleted?: boolean;
+
   @ApiProperty({ example: '张三', required: false })
   @IsOptional() @IsString()
   customerName?: string;
