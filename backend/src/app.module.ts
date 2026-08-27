@@ -24,9 +24,10 @@ import { ScheduleModule } from './modules/schedule/schedule.module';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      // 按 NODE_ENV 加载环境文件（数组后者优先）：
-      // 开发/默认读 .env；NODE_ENV=production 时读 .env.production 覆盖
-      envFilePath: ['.env.local', '.env', `.env.${process.env.NODE_ENV || 'development'}`],
+      // 按 NODE_ENV 加载环境文件。@nestjs/config 规则：数组靠前的文件优先级更高
+      // （同名变量前者胜出）。因此把环境专属文件放最前：
+      // NODE_ENV=production 时 .env.production 压过 .env/.env.local，避免开发库配置泄漏到生产
+      envFilePath: [`.env.${process.env.NODE_ENV || 'development'}`, '.env.local', '.env'],
     }),
     NestScheduleModule.forRoot(),
     StorageModule,
